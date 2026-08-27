@@ -13,11 +13,12 @@ from uuid import uuid4
 
 from bank_rag.agents.orchestrator import RouterAgent
 from bank_rag.agents.tool_registry import ToolRegistry
+from bank_rag.agents.topic_guardrail import OUT_OF_SCOPE_MESSAGE, TopicGuardrail
 from bank_rag.application.ports.audit_log import AuditLog
 from bank_rag.application.ports.cache import ResponseCache
 from bank_rag.application.ports.pii_filter import PiiFilter
 from bank_rag.application.ports.query_rewriter import QueryRewriter
-from bank_rag.domain.entities import Answer, AuditEntry, Conversation, ConversationTurn
+from bank_rag.domain.entities import Answer, AuditEntry, Conversation, ConversationTurn, Intent
 from bank_rag.observability.tracing import trace_span
 
 CACHEABLE_TTL_SECONDS = 3600
@@ -32,6 +33,7 @@ class AnswerQuestion:
         cache: ResponseCache,
         query_rewriter: QueryRewriter,
         audit_log: AuditLog,
+        topic_guardrail: TopicGuardrail,
     ) -> None:
         self._router_agent = router_agent
         self._tools = tool_registry
@@ -39,12 +41,19 @@ class AnswerQuestion:
         self._cache = cache
         self._query_rewriter = query_rewriter
         self._audit_log = audit_log
+        self._topic_guardrail = topic_guardrail
 
     async def execute(self, conversation: Conversation, question: str) -> Answer:
         with trace_span("answer_question", conversation_id=str(conversation.id)):
             safe_question = self._pii_filter.mask(question)
             history_before = conversation.history_as_messages()
             conversation.add(ConversationTurn(role="user", content=safe_question))
+
+            if not await self._topic_guardrail.is_in_scope(safe_question):
+                answer = Answer(text=OUT_OF_SCOPE_MESSAGE, citations=[], intent=Intent.UNKNOWN, grounded=True)
+                conversation.add(ConversationTurn(role="assistant", content=answer.text))
+                await self._record_audit(conversation, safe_question, safe_question, answer)
+                return answer
 
             resolved_question = await self._query_rewriter.rewrite(history_before, safe_question)
 
@@ -60,22 +69,26 @@ class AnswerQuestion:
             if not conversation.is_authenticated and answer.grounded:
                 await self._cache.set(cache_key, json.dumps(answer.__dict__, default=str), CACHEABLE_TTL_SECONDS)
 
-            await self._audit_log.record(
-                AuditEntry(
-                    id=uuid4(),
-                    conversation_id=conversation.id,
-                    customer_id=conversation.customer_id,
-                    question=safe_question,
-                    resolved_question=resolved_question,
-                    retrieved_document_ids=[c.document_id for c in answer.citations],
-                    answer_text=answer.text,
-                    intent=answer.intent,
-                    grounded=answer.grounded,
-                    created_at=datetime.now(timezone.utc),
-                )
-            )
-
+            await self._record_audit(conversation, safe_question, resolved_question, answer)
             return answer
+
+    async def _record_audit(
+        self, conversation: Conversation, question: str, resolved_question: str, answer: Answer
+    ) -> None:
+        await self._audit_log.record(
+            AuditEntry(
+                id=uuid4(),
+                conversation_id=conversation.id,
+                customer_id=conversation.customer_id,
+                question=question,
+                resolved_question=resolved_question,
+                retrieved_document_ids=[c.document_id for c in answer.citations],
+                answer_text=answer.text,
+                intent=answer.intent,
+                grounded=answer.grounded,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
 
     @staticmethod
     def _cache_key(conversation: Conversation, resolved_question: str) -> str:

@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from bank_rag.agents.orchestrator import RouterAgent
 from bank_rag.agents.tool_registry import ToolRegistry
 from bank_rag.agents.tools.account_balance_tool import AccountBalanceTool
+from bank_rag.agents.tools.lock_card_tool import LockCardTool
 from bank_rag.agents.tools.rag_search_tool import RagSearchTool
+from bank_rag.agents.topic_guardrail import TopicGuardrail
 from bank_rag.application.use_cases.answer_question import AnswerQuestion
 from bank_rag.application.use_cases.ingest_document import IngestDocument
 from bank_rag.application.use_cases.manage_noindex_rules import ManageNoIndexRules
@@ -78,14 +80,18 @@ def build_answer_question_use_case(customer_id: str | None = None, is_authentica
     if is_authenticated and customer_id:
         bank_api = CoreBankingHttpClient(settings.core_banking_base_url, settings.core_banking_service_token)
         tools.append(AccountBalanceTool(bank_api, customer_id))
+        tools.append(LockCardTool(bank_api, customer_id))
 
     router_agent = RouterAgent(llm_client, max_iterations=settings.router_max_iterations)
     cache = RedisResponseCache(redis_from_url(settings.redis_url))
     pii_filter = RegexPiiFilter()
     query_rewriter = LLMQueryRewriter(llm_client)
     audit_log = SqlAuditLog(_new_sql_session())
+    topic_guardrail = TopicGuardrail(llm_client)
 
-    return AnswerQuestion(router_agent, ToolRegistry(tools), pii_filter, cache, query_rewriter, audit_log)
+    return AnswerQuestion(
+        router_agent, ToolRegistry(tools), pii_filter, cache, query_rewriter, audit_log, topic_guardrail
+    )
 
 
 def build_ingest_document_use_case() -> IngestDocument:

@@ -1,3 +1,16 @@
+## Confronto con progetti/bot bancari reali (ricerca esterna)
+
+Ricerca su GitHub (progetti simili: [mlrun/demo-banking-agent](https://github.com/mlrun/demo-banking-agent), [frogcoder/llm-chatbot](https://github.com/frogcoder/llm-chatbot), [RasaHQ/financial-demo](https://github.com/RasaHQ/financial-demo)) e su chatbot bancari reali in produzione (Erica-BofA, Eno-Capital One, Ceba-Commonwealth Bank, NOMI-RBC). Nessuno di questi supera la nostra architettura sul lato hexagonal/testing; due gap concreti trovati e colmati:
+
+| Gap trovato | Fonte | Come l'ho colmato |
+|---|---|---|
+| Nessun guardrail *strutturale* di topic-scope (solo istruzione nel system prompt) | mlrun/demo-banking-agent usa una classificazione dedicata "è una domanda bancaria?" prima di procedere | [topic_guardrail.py](src/bank_rag/agents/topic_guardrail.py): check separato, fail-open, eseguito prima del loop tool-calling in `AnswerQuestion.execute` |
+| Nessuna feature di sicurezza immediata via chat | Blocco carta è la feature più citata in assoluto nei bot reali (Eno, Ceba, Erica) — "un cliente che blocca la carta in 15 secondi è più protetto di uno in attesa al telefono" | [lock_card_tool.py](src/bank_rag/agents/tools/lock_card_tool.py), stesso pattern di `AccountBalanceTool`; system prompt aggiornato con eccezione esplicita (azione di sicurezza, non transazione finanziaria) |
+
+**Non implementato, dichiarato esplicitamente**: l'escalation "emotion-aware" (sentiment analysis che attiva l'handoff a un operatore prima del fallback per max-iterazioni) — citata sia da mlrun che da fonti enterprise (Backbase). Richiede un classificatore di sentiment dedicato; è il prossimo miglioramento naturale, non implementato in questo giro per restare nello scope.
+
+Conferma positiva dalla ricerca: le fonti enterprise (Backbase) dicono esplicitamente che "i migliori chatbot bancari nel 2026 separano il layer di conversazione (LLM) dal layer di esecuzione (logica deterministica con audit trail completo)" — è esattamente il pattern `Tool`/`BankApiClient` già presente in questo progetto prima di questa ricerca, non una scoperta che ha richiesto modifiche architetturali.
+
 # Architettura
 
 Hexagonal / clean architecture: il dominio e i casi d'uso non conoscono

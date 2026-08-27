@@ -25,3 +25,9 @@ class CoreBankingHttpClient:
             response = await client.get(f"/customers/{customer_id}/accounts")
             response.raise_for_status()
             return response.json()["accounts"]
+
+    async def lock_card(self, customer_id: str, card_id: str) -> bool:
+        async with httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=self._timeout) as client:
+            response = await client.post(f"/customers/{customer_id}/cards/{card_id}/lock")
+            response.raise_for_status()
+            return bool(response.json().get("locked", True))
