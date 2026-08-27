@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from bank_rag.agents.orchestrator import RouterAgent
+from bank_rag.agents.sentiment_escalation_guardrail import ESCALATION_MESSAGE, SentimentEscalationGuardrail
 from bank_rag.agents.tool_registry import ToolRegistry
 from bank_rag.agents.topic_guardrail import OUT_OF_SCOPE_MESSAGE, TopicGuardrail
 from bank_rag.application.ports.audit_log import AuditLog
@@ -34,6 +35,7 @@ class AnswerQuestion:
         query_rewriter: QueryRewriter,
         audit_log: AuditLog,
         topic_guardrail: TopicGuardrail,
+        sentiment_escalation: SentimentEscalationGuardrail,
     ) -> None:
         self._router_agent = router_agent
         self._tools = tool_registry
@@ -42,6 +44,7 @@ class AnswerQuestion:
         self._query_rewriter = query_rewriter
         self._audit_log = audit_log
         self._topic_guardrail = topic_guardrail
+        self._sentiment_escalation = sentiment_escalation
 
     async def execute(self, conversation: Conversation, question: str) -> Answer:
         with trace_span("answer_question", conversation_id=str(conversation.id)):
@@ -51,6 +54,12 @@ class AnswerQuestion:
 
             if not await self._topic_guardrail.is_in_scope(safe_question):
                 answer = Answer(text=OUT_OF_SCOPE_MESSAGE, citations=[], intent=Intent.UNKNOWN, grounded=True)
+                conversation.add(ConversationTurn(role="assistant", content=answer.text))
+                await self._record_audit(conversation, safe_question, safe_question, answer)
+                return answer
+
+            if await self._sentiment_escalation.needs_escalation(safe_question):
+                answer = Answer(text=ESCALATION_MESSAGE, citations=[], intent=Intent.HUMAN_HANDOFF, grounded=True)
                 conversation.add(ConversationTurn(role="assistant", content=answer.text))
                 await self._record_audit(conversation, safe_question, safe_question, answer)
                 return answer

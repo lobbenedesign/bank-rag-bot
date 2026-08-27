@@ -20,6 +20,7 @@ from bank_rag.agents.orchestrator import RouterAgent
 from bank_rag.agents.tool_registry import ToolRegistry
 from bank_rag.agents.tools.account_balance_tool import AccountBalanceTool
 from bank_rag.agents.tools.lock_card_tool import LockCardTool
+from bank_rag.agents.sentiment_escalation_guardrail import SentimentEscalationGuardrail
 from bank_rag.agents.tools.rag_search_tool import RagSearchTool
 from bank_rag.agents.topic_guardrail import TopicGuardrail
 from bank_rag.application.use_cases.answer_question import AnswerQuestion
@@ -88,9 +89,11 @@ def build_answer_question_use_case(customer_id: str | None = None, is_authentica
     query_rewriter = LLMQueryRewriter(llm_client)
     audit_log = SqlAuditLog(_new_sql_session())
     topic_guardrail = TopicGuardrail(llm_client)
+    sentiment_escalation = SentimentEscalationGuardrail(llm_client)
 
     return AnswerQuestion(
-        router_agent, ToolRegistry(tools), pii_filter, cache, query_rewriter, audit_log, topic_guardrail
+        router_agent, ToolRegistry(tools), pii_filter, cache, query_rewriter, audit_log,
+        topic_guardrail, sentiment_escalation,
     )
 
 

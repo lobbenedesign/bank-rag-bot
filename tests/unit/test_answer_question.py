@@ -4,6 +4,7 @@ import pytest
 
 from bank_rag.agents.orchestrator import RouterAgent
 from bank_rag.agents.tool_registry import ToolRegistry
+from bank_rag.agents.sentiment_escalation_guardrail import ESCALATION_MESSAGE
 from bank_rag.agents.topic_guardrail import OUT_OF_SCOPE_MESSAGE
 from bank_rag.application.ports.llm_client import LLMResponse
 from bank_rag.application.use_cases.answer_question import AnswerQuestion
@@ -55,6 +56,16 @@ class AlwaysOutOfScopeGuardrail:
         return False
 
 
+class NeverEscalateGuardrail:
+    async def needs_escalation(self, question: str) -> bool:
+        return False
+
+
+class AlwaysEscalateGuardrail:
+    async def needs_escalation(self, question: str) -> bool:
+        return True
+
+
 @pytest.mark.asyncio
 async def test_pii_is_masked_before_reaching_the_agent():
     captured_messages: list[dict] = []
@@ -67,7 +78,7 @@ async def test_pii_is_masked_before_reaching_the_agent():
     llm = CapturingLLMClient(LLMResponse(content="Ok.", tool_calls=[], finish_reason="stop"))
     use_case = AnswerQuestion(
         RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
-        PassthroughQueryRewriter(), RecordingAuditLog(), AlwaysInScopeGuardrail(),
+        PassthroughQueryRewriter(), RecordingAuditLog(), AlwaysInScopeGuardrail(), NeverEscalateGuardrail(),
     )
 
     await use_case.execute(Conversation(), "il mio iban è IT60X0542811101000000123456")
@@ -82,7 +93,7 @@ async def test_ungrounded_factual_claim_without_a_tool_call_is_never_cached():
     cache = InMemoryCache()
     use_case = AnswerQuestion(
         RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), cache,
-        PassthroughQueryRewriter(), RecordingAuditLog(), AlwaysInScopeGuardrail(),
+        PassthroughQueryRewriter(), RecordingAuditLog(), AlwaysInScopeGuardrail(), NeverEscalateGuardrail(),
     )
 
     first = await use_case.execute(Conversation(), "quanto costa il conto base?")
@@ -96,7 +107,7 @@ async def test_real_smalltalk_greeting_is_grounded_and_not_cached():
     llm = FakeLLMClient(LLMResponse(content="Ciao! Come posso aiutarti?", tool_calls=[], finish_reason="stop"))
     use_case = AnswerQuestion(
         RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
-        PassthroughQueryRewriter(), RecordingAuditLog(), AlwaysInScopeGuardrail(),
+        PassthroughQueryRewriter(), RecordingAuditLog(), AlwaysInScopeGuardrail(), NeverEscalateGuardrail(),
     )
 
     answer = await use_case.execute(Conversation(), "ciao")
@@ -110,7 +121,7 @@ async def test_every_exchange_is_recorded_in_the_audit_log():
     conversation = Conversation(customer_id="cust-42", is_authenticated=True)
     use_case = AnswerQuestion(
         RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
-        PassthroughQueryRewriter(), audit_log, AlwaysInScopeGuardrail(),
+        PassthroughQueryRewriter(), audit_log, AlwaysInScopeGuardrail(), NeverEscalateGuardrail(),
     )
 
     await use_case.execute(conversation, "ciao")
@@ -151,7 +162,7 @@ async def test_follow_up_question_is_resolved_before_retrieval():
 
     use_case = AnswerQuestion(
         RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
-        rewriter, RecordingAuditLog(), AlwaysInScopeGuardrail(),
+        rewriter, RecordingAuditLog(), AlwaysInScopeGuardrail(), NeverEscalateGuardrail(),
     )
 
     await use_case.execute(conversation, "e quanto costa il bonifico?")
@@ -169,7 +180,7 @@ async def test_out_of_scope_question_never_reaches_the_router_agent():
     audit_log = RecordingAuditLog()
     use_case = AnswerQuestion(
         RouterAgent(UnreachableLLMClient()), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
-        PassthroughQueryRewriter(), audit_log, AlwaysOutOfScopeGuardrail(),
+        PassthroughQueryRewriter(), audit_log, AlwaysOutOfScopeGuardrail(), NeverEscalateGuardrail(),
     )
 
     answer = await use_case.execute(Conversation(), "scrivimi una poesia sull'autunno")
@@ -177,3 +188,23 @@ async def test_out_of_scope_question_never_reaches_the_router_agent():
     assert answer.text == OUT_OF_SCOPE_MESSAGE
     assert answer.intent == Intent.UNKNOWN
     assert len(audit_log.entries) == 1  # still logged, for visibility into misuse patterns
+
+
+@pytest.mark.asyncio
+async def test_frustrated_customer_is_escalated_without_reaching_the_router_agent():
+    class UnreachableLLMClient:
+        async def complete(self, system_prompt, messages, tools=None):
+            raise AssertionError("router agent should never run when sentiment escalation triggers")
+
+    audit_log = RecordingAuditLog()
+    use_case = AnswerQuestion(
+        RouterAgent(UnreachableLLMClient()), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
+        PassthroughQueryRewriter(), audit_log, AlwaysInScopeGuardrail(), AlwaysEscalateGuardrail(),
+    )
+
+    answer = await use_case.execute(Conversation(), "sono stufo, non capite mai niente!")
+
+    assert answer.text == ESCALATION_MESSAGE
+    assert answer.intent == Intent.HUMAN_HANDOFF
+    assert answer.grounded is True
+    assert len(audit_log.entries) == 1
