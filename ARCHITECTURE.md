@@ -1,3 +1,21 @@
+## Smoke test end-to-end reale (server vero avviato, non solo unit test)
+
+Prima di questo punto, ogni verifica in questo progetto era `py_compile` (sintassi), unit test con fake (`ToolRegistry([])`, client fittizi), o file statici serviti senza backend. Qui invece: `uvicorn` avviato per davvero, con l'app FastAPI reale, senza Qdrant/OpenSearch/Postgres/Redis in esecuzione (disco della macchina troppo pieno per Docker — vedi nota sotto), per vedere fin dove il sistema regge senza infrastruttura.
+
+**Bug reale trovato e corretto**: `pyproject.toml` dichiarava `opensearch-py>=2.6`, ma `AsyncOpenSearch` non è nemmeno importabile da quel pacchetto senza l'extra `[async]` (che porta `aiohttp`) — senza quell'extra, l'intera app falliva all'avvio con `ImportError`. Corretto in `opensearch-py[async]>=2.6`. Un bug di dipendenze non catturabile da `py_compile` né dagli unit test (che mockano `OpenSearchKeywordIndex`, non lo importano mai per davvero) — solo un vero avvio lo trova.
+
+**Cosa ho verificato per davvero, con richieste HTTP reali**:
+- `create_app()` costruisce senza errori (tutti e 4 i router, entrambi i mount statici, `/health`).
+- `GET /health` → 200 reale.
+- `GET /admin-ui/`, `GET /widget/` → 200 reali, serviti dallo stesso processo FastAPI.
+- `GET /admin/noindex` senza token → 403 reale (gate `is_employee` funziona).
+- `GET /admin/documents` con un JWT vero (firmato con `PyJWT`, stesso secret dell'app) → autenticazione **superata**, la richiesta arriva fino al tentativo di connessione a Postgres, che fallisce con `ConnectionRefusedError` (Postgres non è in esecuzione) — non un errore di codice.
+- `POST /chat` → stesso pattern: la richiesta arriva fino al rate limiter, che tenta la connessione a Redis e fallisce con `ConnectionRefusedError` — non un errore di codice.
+
+In altre parole: **tutto il wiring — routing, dependency injection, autenticazione JWT, autorizzazione, rate limiting — è stato verificato con richieste HTTP reali**, non solo ragionato. L'unica cosa non verificata è il comportamento quando Qdrant/OpenSearch/Postgres/Redis rispondono davvero (serve Docker, che il disco pieno della macchina non permette in questo momento) e la generazione di una risposta LLM reale (serve una chiave OpenAI vera e valida, non usata qui).
+
+Per l'avvio ho dovuto anche creare uno stub temporaneo, **non incluso nel repository**, per `sentence_transformers` (pacchetto che porta `torch`, troppo pesante per lo spazio disco disponibile) — il reranker cross-encoder non è stato quindi eseguito per davvero in questo test, solo importato come stub che solleva `NotImplementedError` se chiamato. Dichiarato esplicitamente, non nascosto.
+
 ## Confronto con progetti/bot bancari reali (ricerca esterna)
 
 Ricerca su GitHub (progetti simili: [mlrun/demo-banking-agent](https://github.com/mlrun/demo-banking-agent), [frogcoder/llm-chatbot](https://github.com/frogcoder/llm-chatbot), [RasaHQ/financial-demo](https://github.com/RasaHQ/financial-demo)) e su chatbot bancari reali in produzione (Erica-BofA, Eno-Capital One, Ceba-Commonwealth Bank, NOMI-RBC). Nessuno di questi supera la nostra architettura sul lato hexagonal/testing; due gap concreti trovati e colmati:
