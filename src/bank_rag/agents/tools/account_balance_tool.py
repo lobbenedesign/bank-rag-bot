@@ -22,6 +22,7 @@ class AccountBalanceTool:
         "required": ["account_id"],
     }
     requires_authentication = True
+    requires_confirmation = False  # a read-only lookup; nothing to confirm
 
     def __init__(self, bank_api: BankApiClient, customer_id: str) -> None:
         self._bank_api = bank_api

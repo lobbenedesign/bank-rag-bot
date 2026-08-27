@@ -42,6 +42,7 @@ class RagSearchTool:
         "required": ["query"],
     }
     requires_authentication = False
+    requires_confirmation = False  # a read-only search; nothing to confirm
 
     def __init__(
         self,

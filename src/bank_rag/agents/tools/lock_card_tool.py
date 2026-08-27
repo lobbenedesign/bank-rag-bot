@@ -2,6 +2,14 @@
 AccountBalanceTool's pattern exactly: authenticated-only, delegates the
 actual side effect to BankApiClient, never touches core banking logic
 directly. See bank_api_client.py for why this specific feature was chosen.
+
+`requires_confirmation = True`: this tool never runs the instant the model
+decides to call it. RouterAgent intercepts the call, proposes it back to
+the customer, and only executes on an explicit affirmative reply next turn
+(see agents/orchestrator.py and AnswerQuestion's pending_action handling).
+Locking a card is reversible and low-risk in the abstract, but a wrong
+guess by the model about *which* card still means blocking a card the
+customer didn't mean to block — that's the bar this flag exists for.
 """
 from __future__ import annotations
 
@@ -14,10 +22,9 @@ from bank_rag.application.ports.bank_api_client import BankApiClient
 class LockCardTool:
     name = "lock_card"
     description = (
-        "Locks (freezes) one of the authenticated customer's cards immediately. "
-        "Use this when the customer reports a lost/stolen card or suspicious activity — "
-        "this is a safety action, not a financial transaction, and should be acted on "
-        "without redirecting the customer elsewhere."
+        "Proposes locking (freezing) one of the authenticated customer's cards. "
+        "Use this when the customer reports a lost/stolen card or suspicious activity. "
+        "This only proposes the action — it is executed after the customer confirms."
     )
     parameters_schema: dict[str, Any] = {
         "type": "object",
@@ -25,6 +32,7 @@ class LockCardTool:
         "required": ["card_id"],
     }
     requires_authentication = True
+    requires_confirmation = True
 
     def __init__(self, bank_api: BankApiClient, customer_id: str) -> None:
         self._bank_api = bank_api

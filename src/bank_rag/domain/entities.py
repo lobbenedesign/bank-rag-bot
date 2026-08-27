@@ -87,12 +87,27 @@ class ConversationTurn:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+@dataclass(frozen=True)
+class PendingAction:
+    """A high-risk tool call the agent has proposed but not executed —
+    the deterministic confirm path production banking-chatbot guidance
+    calls for (see ARCHITECTURE.md). Lives on Conversation until the next
+    customer message either confirms it (agent executes tool_name with
+    arguments) or doesn't (it's discarded, nothing runs).
+    """
+
+    tool_name: str
+    arguments: dict[str, object]
+    confirmation_prompt: str
+
+
 @dataclass
 class Conversation:
     id: UUID = field(default_factory=uuid4)
     customer_id: str | None = None
     is_authenticated: bool = False
     turns: list[ConversationTurn] = field(default_factory=list)
+    pending_action: PendingAction | None = None
 
     def add(self, turn: ConversationTurn) -> None:
         self.turns.append(turn)
@@ -107,6 +122,7 @@ class Answer:
     citations: list[Citation]
     intent: Intent
     grounded: bool
+    pending_action: PendingAction | None = None
 
 
 class NoIndexRuleType(str, Enum):

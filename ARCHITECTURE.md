@@ -41,9 +41,17 @@ Ricerca su UX best practice 2026 per chatbot conversazionali e specificamente ba
 | Nessun supporto dark mode / `prefers-reduced-motion` | Linee guida accessibilità 2026 | `@media (prefers-color-scheme: dark)` su entrambe le UI (widget e admin); l'indicatore di digitazione animato rispetta `prefers-reduced-motion` |
 | Nessuna chiusura da tastiera (Escape) | WCAG operabilità da tastiera | Aggiunto, **con un bug trovato e corretto durante la verifica**: il listener era agganciato al pannello, ma dopo il click su un chip il focus va al `body` — l'evento non risaliva mai. Spostato il listener su `document`, riverificato nel browser (chiusura + ritorno del focus alla bolla confermati). |
 
-**Non implementato, dichiarato esplicitamente**:
-- **Conferma esplicita prima di `lock_card`** — la ricerca dice chiaramente che "le operazioni ad alto rischio devono avere un percorso deterministico con conferma esplicita". Farlo bene richiede ridisegnare il loop dell'agente (un'azione "proposta" che aspetta conferma esplicita dell'utente prima di eseguire il tool, non solo un alert lato client) — cambio architetturale reale, non una patch, quindi non forzato in coda a questa sessione. È il prossimo passo prioritario.
-- **Streaming token-by-token** — pattern 2026 standard (SSE, non richiede websocket), ma tocca sia il backend (porta `LLMClient`, adapter OpenAI, endpoint `/chat`) sia il frontend. Stessa decisione: non improvvisato.
+**Aggiornamento — conferma esplicita prima di `lock_card` ora implementata**: non un alert lato client, ma uno stato reale nel dominio.
+
+- `Conversation.pending_action: PendingAction | None` — quando l'LLM chiama un tool con `requires_confirmation = True` (oggi solo `lock_card`), `RouterAgent` **non esegue mai `.run()`**: interrompe il loop, restituisce un `Answer` con `pending_action` valorizzato e un testo che chiede conferma.
+- `AnswerQuestion.execute()` controlla `conversation.pending_action` **prima di qualunque altro guardrail** (topic-scope, sentiment) — se il messaggio successivo del cliente è la risposta a una proposta in sospeso, non deve rischiare di essere scartato come "fuori tema" solo perché è un breve "sì".
+- Un nuovo `ConfirmationGuardrail` (stesso pattern degli altri due, fail-*chiuso* come `SentimentEscalationGuardrail`: ambiguo → non confermato) decide se il messaggio è una conferma esplicita. Solo allora il tool viene eseguito per davvero.
+
+**Un bug reale trovato mentre veniva collegato, non dal codice del flusso stesso**: `RedisConversationRepository._serialize`/`_deserialize` non includevano affatto `pending_action`. Nei unit test, dove la stessa istanza `Conversation` sopravvive in memoria tra due chiamate a `execute()`, il flusso funzionava perfettamente — ma in una vera richiesta HTTP, ogni richiesta deserializza una `Conversation` **nuova** da Redis: lo stato "azione in sospeso" sarebbe sparito silenziosamente tra la proposta e la conferma, rompendo il meccanismo proprio nell'unico scenario che conta (l'uso reale, non il test). Corretto, e aggiunto un test round-trip dedicato ([test_redis_conversation_repository.py](tests/unit/test_redis_conversation_repository.py)) proprio per questa classe di bug — non catturabile da un fake in memoria, solo esercitando la serializzazione vera.
+
+**Ancora non implementato, dichiarato esplicitamente**:
+- **Streaming token-by-token** — pattern 2026 standard (SSE, non richiede websocket), ma tocca sia il backend (porta `LLMClient`, adapter OpenAI, endpoint `/chat`) sia il frontend. Prossimo passo prioritario rimasto.
+- Il testo di conferma (`_build_confirmation_text` in `orchestrator.py`) è generico per qualunque tool con `requires_confirmation`, non specializzato per `lock_card` — funziona ma non è raffinato linguisticamente; con più tool a rischio in futuro varrebbe la pena renderlo per-tool.
 
 # Architettura
 

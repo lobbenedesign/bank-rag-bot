@@ -41,3 +41,7 @@ async def test_degrades_gracefully_on_bank_api_failure():
 
 def test_requires_authentication():
     assert LockCardTool.requires_authentication is True
+
+
+def test_requires_confirmation():
+    assert LockCardTool.requires_confirmation is True

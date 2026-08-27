@@ -27,11 +27,25 @@ class FakeLLMClient:
 class FakeSearchTool:
     name = "search_knowledge_base"
     requires_authentication = False
+    requires_confirmation = False
 
     async def run(self, query: str) -> str:
         return json.dumps(
             {"results": [{"document_id": "faq_1", "title": "Conto Base", "snippet": "Nessun canone.", "score": 0.9}]}
         )
+
+    def to_openai_schema(self):
+        return {"type": "function", "function": {"name": self.name}}
+
+
+class FakeConfirmableTool:
+    name = "lock_card"
+    description = "Locks a card. First sentence describes the action."
+    requires_authentication = True
+    requires_confirmation = True
+
+    async def run(self, **kwargs):
+        raise AssertionError("run() must never be called for a requires_confirmation tool without confirmation")
 
     def to_openai_schema(self):
         return {"type": "function", "function": {"name": self.name}}
@@ -86,3 +100,28 @@ async def test_falls_back_to_human_handoff_when_answer_ungrounded():
 
     assert answer.text == FALLBACK_TEXT
     assert answer.grounded is False
+
+
+@pytest.mark.asyncio
+async def test_tool_requiring_confirmation_is_proposed_not_executed():
+    llm = FakeLLMClient(
+        [
+            LLMResponse(
+                content=None,
+                tool_calls=[ToolCall(id="1", name="lock_card", arguments={"card_id": "card-42"})],
+                finish_reason="tool_calls",
+            ),
+        ]
+    )
+    agent = RouterAgent(llm)
+    conversation = Conversation(is_authenticated=True)
+    conversation.add(ConversationTurn(role="user", content="la mia carta è stata rubata, bloccala"))
+
+    answer = await agent.handle(conversation, ToolRegistry([FakeConfirmableTool()]))
+
+    # FakeConfirmableTool.run() would raise if called — reaching this
+    # assertion at all proves .run() was never invoked.
+    assert answer.pending_action is not None
+    assert answer.pending_action.tool_name == "lock_card"
+    assert answer.pending_action.arguments == {"card_id": "card-42"}
+    assert answer.grounded is True
