@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: PYTHONPATH=src pytest tests/unit -v
+
+  # RAG quality gate: only runs when a change touches prompts, chunking or
+  # retrieval — those are exactly the changes that can silently regress
+  # answer quality without breaking any unit test.
+  rag-eval:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            rag_relevant:
+              - 'src/bank_rag/agents/**'
+              - 'src/bank_rag/ingestion/chunking/**'
+      - uses: actions/setup-python@v5
+        if: steps.changes.outputs.rag_relevant == 'true'
+        with:
+          python-version: "3.11"
+      - name: Run RAGAS eval against golden dataset
+        if: steps.changes.outputs.rag_relevant == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          JWT_SECRET: ci-only-secret
+          CORE_BANKING_BASE_URL: http://localhost
+          CORE_BANKING_SERVICE_TOKEN: ci-only-token
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "OPENAI_API_KEY secret not set — skipping RAG eval (configure it in repo secrets to enable this gate)."
+            exit 0
+          fi
+          pip install -e ".[dev,eval]"
+          python -m bank_rag.observability.eval.ragas_eval eval/golden_dataset.jsonl

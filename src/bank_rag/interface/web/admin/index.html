@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Bank Agentic RAG — Pannello Dipendenti</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Pannello di Ingestion</h1>
+  <p class="subtitle">Gestione dei contenuti del chatbot — solo personale autorizzato</p>
+</header>
+
+<section id="token-section">
+  <form id="token-form">
+    <label for="token-input">Token employee (JWT)</label>
+    <input id="token-input" type="password" placeholder="Incolla qui il token fornito dall'IdP aziendale" required>
+    <button type="submit">Accedi</button>
+  </form>
+  <p id="token-status" class="muted"></p>
+  <button id="logout-button" class="link-button" type="button">Esci (rimuovi il token da questa sessione)</button>
+</section>
+
+<main id="app" hidden>
+  <nav class="tabs">
+    <button class="tab-button active" data-tab="tab-documents">Documenti</button>
+    <button class="tab-button" data-tab="tab-urls">Pagine web</button>
+    <button class="tab-button" data-tab="tab-noindex">Esclusioni (no-index)</button>
+  </nav>
+
+  <section id="tab-documents" class="tab-panel active">
+    <h2>Carica un documento</h2>
+    <form id="upload-form">
+      <label>Titolo <input name="title" required></label>
+      <label>Ambito
+        <select name="audience">
+          <option value="public">Pubblico (visibile ai clienti)</option>
+          <option value="internal">Interno (solo personale)</option>
+        </select>
+      </label>
+      <label>File — PDF, DOCX, MD, TXT, CSV, XLSX, JSON, XML
+        <input name="file" type="file" required
+               accept=".pdf,.docx,.md,.markdown,.txt,.csv,.xlsx,.xlsm,.json,.xml">
+      </label>
+      <button type="submit">Carica e indicizza</button>
+      <p data-status class="status" role="status"></p>
+    </form>
+
+    <h2>Documenti indicizzati</h2>
+    <div id="documents-table"></div>
+  </section>
+
+  <section id="tab-urls" class="tab-panel">
+    <h2>Indicizza una pagina del sito</h2>
+    <form id="url-form">
+      <label>URL <input name="url" type="url" required placeholder="https://www.example-bank.it/faq"></label>
+      <label>Titolo (opzionale, se vuoto usa il titolo della pagina) <input name="title"></label>
+      <label>Ambito
+        <select name="audience">
+          <option value="public" selected>Pubblico</option>
+          <option value="internal">Interno</option>
+        </select>
+      </label>
+      <button type="submit">Indicizza pagina</button>
+      <p data-status class="status" role="status"></p>
+    </form>
+    <p class="muted">Le pagine pubbliche del sito vengono sincronizzate automaticamente su base periodica; usa questo modulo per indicizzare subito una pagina appena pubblicata o aggiornata, senza attendere il prossimo ciclo.</p>
+  </section>
+
+  <section id="tab-noindex" class="tab-panel">
+    <h2>Escludi contenuti dall'indicizzazione</h2>
+    <form id="rule-form">
+      <label>Pattern (URL o nome file, con wildcard *) <input name="pattern" required placeholder="https://www.example-bank.it/promo/*"></label>
+      <label>Tipo
+        <select name="rule_type">
+          <option value="url">URL</option>
+          <option value="source_id">File (source_id)</option>
+        </select>
+      </label>
+      <label>Motivo <input name="reason" required placeholder="es. promozione scaduta"></label>
+      <fieldset>
+        <legend>Esclusione granulare (opzionale — lascia vuoto per escludere l'intero documento)</legend>
+        <label>Tipo locator
+          <select name="locator_kind">
+            <option value="">— intero documento —</option>
+            <option value="page_paragraph">Pagina:paragrafo (PDF)</option>
+            <option value="section">Sezione (DOCX / Markdown / pagina web)</option>
+            <option value="line_range">Range di righe (TXT)</option>
+            <option value="row_range">Range di righe (CSV / Excel)</option>
+            <option value="json_path">Percorso (JSON)</option>
+            <option value="xpath">Percorso (XML)</option>
+          </select>
+        </label>
+        <label>Pattern locator (con wildcard *) <input name="locator_pattern" placeholder="es. 7:*, Cookie*, Tassi!*"></label>
+      </fieldset>
+      <button type="submit">Aggiungi regola</button>
+      <p data-status class="status" role="status"></p>
+    </form>
+
+    <h2>Regole attive</h2>
+    <div id="rules-table"></div>
+  </section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

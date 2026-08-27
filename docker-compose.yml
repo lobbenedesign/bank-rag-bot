@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    depends_on: [qdrant, opensearch, redis, postgres]
+
+  ingestion-worker:
+    build: .
+    command: python -m bank_rag.ingestion.pipeline
+    env_file: .env
+    depends_on: [qdrant, opensearch, postgres]
+
+  qdrant:
+    image: qdrant/qdrant:v1.10.1
+    ports: ["6333:6333"]
+    volumes: ["qdrant_data:/qdrant/storage"]
+
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+    ports: ["9200:9200"]
+    volumes: ["opensearch_data:/usr/share/opensearch/data"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bank_rag
+      POSTGRES_PASSWORD: bank_rag
+      POSTGRES_DB: bank_rag
+    ports: ["5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+
+volumes:
+  qdrant_data:
+  opensearch_data:
+  postgres_data:

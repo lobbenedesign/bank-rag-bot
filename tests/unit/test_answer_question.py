@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+import pytest
+
+from bank_rag.agents.orchestrator import RouterAgent
+from bank_rag.agents.tool_registry import ToolRegistry
+from bank_rag.application.ports.llm_client import LLMResponse
+from bank_rag.application.use_cases.answer_question import AnswerQuestion
+from bank_rag.domain.entities import Conversation
+from bank_rag.infrastructure.security.pii_filter_regex import RegexPiiFilter
+
+
+class FakeLLMClient:
+    def __init__(self, response: LLMResponse) -> None:
+        self._response = response
+
+    async def complete(self, system_prompt, messages, tools=None) -> LLMResponse:
+        return self._response
+
+
+class InMemoryCache:
+    def __init__(self) -> None:
+        self._store: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        return self._store.get(key)
+
+    async def set(self, key: str, value: str, ttl_seconds: int) -> None:
+        self._store[key] = value
+
+
+class PassthroughQueryRewriter:
+    """Mirrors LLMQueryRewriter's contract without needing an LLM call."""
+
+    async def rewrite(self, history: list[dict[str, str]], question: str) -> str:
+        return question
+
+
+class RecordingAuditLog:
+    def __init__(self) -> None:
+        self.entries = []
+
+    async def record(self, entry) -> None:
+        self.entries.append(entry)
+
+
+@pytest.mark.asyncio
+async def test_pii_is_masked_before_reaching_the_agent():
+    captured_messages: list[dict] = []
+
+    class CapturingLLMClient(FakeLLMClient):
+        async def complete(self, system_prompt, messages, tools=None):
+            captured_messages.extend(messages)
+            return self._response
+
+    llm = CapturingLLMClient(LLMResponse(content="Ok.", tool_calls=[], finish_reason="stop"))
+    use_case = AnswerQuestion(
+        RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
+        PassthroughQueryRewriter(), RecordingAuditLog(),
+    )
+
+    await use_case.execute(Conversation(), "il mio iban è IT60X0542811101000000123456")
+
+    assert "IT60X0542811101000000123456" not in captured_messages[-1]["content"]
+    assert "[REDACTED_IBAN]" in captured_messages[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_ungrounded_factual_claim_without_a_tool_call_is_never_cached():
+    llm = FakeLLMClient(LLMResponse(content="Il Conto Base non ha canone.", tool_calls=[], finish_reason="stop"))
+    cache = InMemoryCache()
+    use_case = AnswerQuestion(
+        RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), cache,
+        PassthroughQueryRewriter(), RecordingAuditLog(),
+    )
+
+    first = await use_case.execute(Conversation(), "quanto costa il conto base?")
+    assert len(cache._store) == 0
+    assert first.grounded is False
+    assert first.text == "Non ho questa informazione, ti metto in contatto con un operatore."
+
+
+@pytest.mark.asyncio
+async def test_real_smalltalk_greeting_is_grounded_and_not_cached():
+    llm = FakeLLMClient(LLMResponse(content="Ciao! Come posso aiutarti?", tool_calls=[], finish_reason="stop"))
+    use_case = AnswerQuestion(
+        RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
+        PassthroughQueryRewriter(), RecordingAuditLog(),
+    )
+
+    answer = await use_case.execute(Conversation(), "ciao")
+    assert answer.grounded is True
+
+
+@pytest.mark.asyncio
+async def test_every_exchange_is_recorded_in_the_audit_log():
+    llm = FakeLLMClient(LLMResponse(content="Ciao! Come posso aiutarti?", tool_calls=[], finish_reason="stop"))
+    audit_log = RecordingAuditLog()
+    conversation = Conversation(customer_id="cust-42", is_authenticated=True)
+    use_case = AnswerQuestion(
+        RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(),
+        PassthroughQueryRewriter(), audit_log,
+    )
+
+    await use_case.execute(conversation, "ciao")
+
+    assert len(audit_log.entries) == 1
+    entry = audit_log.entries[0]
+    assert entry.conversation_id == conversation.id
+    assert entry.customer_id == "cust-42"
+    assert entry.question == "ciao"
+    assert entry.resolved_question == "ciao"
+
+
+@pytest.mark.asyncio
+async def test_follow_up_question_is_resolved_before_retrieval():
+    class RecordingQueryRewriter:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[dict], str]] = []
+
+        async def rewrite(self, history, question) -> str:
+            self.calls.append((history, question))
+            return "quanto costa il bonifico sul Conto Base" if history else question
+
+    class RecordingLLMClient:
+        def __init__(self) -> None:
+            self.last_messages: list[dict] = []
+
+        async def complete(self, system_prompt, messages, tools=None) -> LLMResponse:
+            self.last_messages = messages
+            return LLMResponse(content="Il bonifico è gratuito.", tool_calls=[], finish_reason="stop")
+
+    from bank_rag.domain.entities import ConversationTurn
+
+    llm = RecordingLLMClient()
+    rewriter = RecordingQueryRewriter()
+    conversation = Conversation()
+    conversation.add(ConversationTurn(role="user", content="quanto costa il conto base?"))
+    conversation.add(ConversationTurn(role="assistant", content="Il Conto Base è gratuito."))
+
+    use_case = AnswerQuestion(
+        RouterAgent(llm), ToolRegistry([]), RegexPiiFilter(), InMemoryCache(), rewriter, RecordingAuditLog(),
+    )
+
+    await use_case.execute(conversation, "e quanto costa il bonifico?")
+
+    assert rewriter.calls[-1][1] == "e quanto costa il bonifico?"
+    assert llm.last_messages[-1]["content"] == "quanto costa il bonifico sul Conto Base"

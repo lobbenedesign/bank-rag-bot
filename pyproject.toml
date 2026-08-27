@@ -1,0 +1,54 @@
+[project]
+name = "bank-agentic-rag"
+version = "0.1.0"
+description = "Agentic RAG chatbot for a bank website: public FAQ + employee-curated documents, hybrid retrieval, tool-using router agent."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "openai>=1.40",
+    "qdrant-client>=1.10",
+    "opensearch-py>=2.6",
+    "redis>=5.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "sentence-transformers>=3.0",
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
+    "pdfplumber>=0.11",  # MIT-licensed PDF layout extraction — see pdf_segmenter.py for why not PyMuPDF (AGPL)
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "defusedxml>=0.7",
+    "opentelemetry-api>=1.26",
+    "opentelemetry-sdk>=1.26",
+    "pyjwt>=2.9",
+]
+
+[project.optional-dependencies]
+eval = ["ragas>=0.1", "datasets>=2.20"]
+dev = [
+    "pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11",
+    "fpdf2>=2.7",  # test-only: generates real PDFs for pdf_segmenter round-trip tests, never imported by app code
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
