@@ -1,4 +1,4 @@
-# Bank Agentic RAG Chatbot
+# Bank RAG Bot
 
 Chatbot agentico per il sito di una banca: risponde usando sia i contenuti
 pubblici del sito sia documenti interni caricati dai dipendenti, con

@@ -21,7 +21,7 @@ _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Bank Agentic RAG Chatbot", version="1.0.0")
+    app = FastAPI(title="Bank RAG Bot", version="1.0.0")
 
     app.add_middleware(
         CORSMiddleware,

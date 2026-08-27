@@ -1,5 +1,5 @@
 [project]
-name = "bank-agentic-rag"
+name = "bank-rag-bot"
 version = "0.1.0"
 description = "Agentic RAG chatbot for a bank website: public FAQ + employee-curated documents, hybrid retrieval, tool-using router agent."
 requires-python = ">=3.11"
