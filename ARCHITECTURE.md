@@ -11,6 +11,22 @@ Ricerca su GitHub (progetti simili: [mlrun/demo-banking-agent](https://github.co
 
 Conferma positiva dalla ricerca: le fonti enterprise (Backbase) dicono esplicitamente che "i migliori chatbot bancari nel 2026 separano il layer di conversazione (LLM) dal layer di esecuzione (logica deterministica con audit trail completo)" — è esattamente il pattern `Tool`/`BankApiClient` già presente in questo progetto prima di questa ricerca, non una scoperta che ha richiesto modifiche architetturali.
 
+## Ricerca UX/frontend (secondo giro) — cosa colmato, cosa dichiarato fuori scope
+
+Ricerca su UX best practice 2026 per chatbot conversazionali e specificamente bancari, più linee guida WCAG per widget chat. Trovato: il 71% dell'abbandono di prodotti AI è causato da problemi di interfaccia, non dal modello — le quattro proprietà che contano: trasparenza sulle capacità, gestione degli errori, segnalazione dell'incertezza, accessibilità.
+
+| Gap trovato | Fonte | Come l'ho colmato |
+|---|---|---|
+| Target di tocco sotto soglia WCAG 2.5.8 (pulsante invio 36×36px) | Standard 44×44px minimo | [widget.css](src/bank_rag/interface/web/widget/widget.css): pulsanti invio/chiudi portati a 44×44px, verificato via `getBoundingClientRect()` nel browser |
+| Nessuna "capability transparency" — l'utente non sa cosa il bot sa fare finché non chiede | Quick-reply/domande suggerite riducono il carico cognitivo | [chat-ui.js](src/bank_rag/interface/web/widget/chat-ui.js): 3 domande suggerite dopo il saluto, cliccabili |
+| Citazioni come testo piatto, non ispezionabili | Pattern 2026: source badge cliccabili/espandibili | `_renderCitations()` in chat-ui.js: chip cliccabile per fonte, espande lo snippet on-click |
+| Nessun supporto dark mode / `prefers-reduced-motion` | Linee guida accessibilità 2026 | `@media (prefers-color-scheme: dark)` su entrambe le UI (widget e admin); l'indicatore di digitazione animato rispetta `prefers-reduced-motion` |
+| Nessuna chiusura da tastiera (Escape) | WCAG operabilità da tastiera | Aggiunto, **con un bug trovato e corretto durante la verifica**: il listener era agganciato al pannello, ma dopo il click su un chip il focus va al `body` — l'evento non risaliva mai. Spostato il listener su `document`, riverificato nel browser (chiusura + ritorno del focus alla bolla confermati). |
+
+**Non implementato, dichiarato esplicitamente**:
+- **Conferma esplicita prima di `lock_card`** — la ricerca dice chiaramente che "le operazioni ad alto rischio devono avere un percorso deterministico con conferma esplicita". Farlo bene richiede ridisegnare il loop dell'agente (un'azione "proposta" che aspetta conferma esplicita dell'utente prima di eseguire il tool, non solo un alert lato client) — cambio architetturale reale, non una patch, quindi non forzato in coda a questa sessione. È il prossimo passo prioritario.
+- **Streaming token-by-token** — pattern 2026 standard (SSE, non richiede websocket), ma tocca sia il backend (porta `LLMClient`, adapter OpenAI, endpoint `/chat`) sia il frontend. Stessa decisione: non improvvisato.
+
 # Architettura
 
 Hexagonal / clean architecture: il dominio e i casi d'uso non conoscono

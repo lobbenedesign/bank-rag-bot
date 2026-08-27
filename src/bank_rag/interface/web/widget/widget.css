@@ -1,3 +1,26 @@
+:root {
+  --brag-accent: #0a5cff;
+  --brag-accent-contrast: #ffffff;
+  --brag-bg: #f7f8fa;
+  --brag-panel-bg: #ffffff;
+  --brag-border: #dde1e6;
+  --brag-text: #1c2126;
+  --brag-text-muted: #6b7280;
+}
+
+/* Respects the host page's OS-level preference — not a toggle we build UI
+   for, just correctness: a banking widget embedded in a dark-mode page
+   shouldn't force a blinding white panel on the user. */
+@media (prefers-color-scheme: dark) {
+  #brag-widget-root {
+    --brag-bg: #1c2126;
+    --brag-panel-bg: #24292f;
+    --brag-border: #3a4048;
+    --brag-text: #e6e8eb;
+    --brag-text-muted: #9aa1a9;
+  }
+}
+
 #brag-widget-root {
   position: fixed;
   bottom: 20px;
@@ -6,12 +29,17 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
+#brag-widget-root *:focus-visible {
+  outline: 2px solid var(--brag-accent);
+  outline-offset: 2px;
+}
+
 .brag-bubble {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: #0a5cff;
-  color: #fff;
+  background: var(--brag-accent);
+  color: var(--brag-accent-contrast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -28,7 +56,7 @@
   width: 340px;
   height: 480px;
   max-height: 70vh;
-  background: #fff;
+  background: var(--brag-panel-bg);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
   display: flex;
@@ -43,8 +71,8 @@
 }
 
 .brag-header {
-  background: #0a5cff;
-  color: #fff;
+  background: var(--brag-accent);
+  color: var(--brag-accent-contrast);
   padding: 14px 16px;
   display: flex;
   justify-content: space-between;
@@ -53,12 +81,33 @@
   font-size: 0.95rem;
 }
 .brag-close {
+  /* 44x44 minimum touch target (WCAG 2.5.8) — the visible glyph stays
+     small, the hit area does not. */
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -12px -12px -12px 0;
   background: none;
   border: none;
-  color: #fff;
-  font-size: 20px;
+  color: var(--brag-accent-contrast);
+  font-size: 22px;
   cursor: pointer;
   line-height: 1;
+  border-radius: 8px;
+}
+
+.brag-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .brag-messages {
@@ -68,11 +117,11 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #f7f8fa;
+  background: var(--brag-bg);
 }
 
 .brag-message {
-  max-width: 80%;
+  max-width: 85%;
   padding: 8px 12px;
   border-radius: 12px;
   font-size: 0.88rem;
@@ -81,39 +130,103 @@
 }
 .brag-message-user {
   align-self: flex-end;
-  background: #0a5cff;
-  color: #fff;
+  background: var(--brag-accent);
+  color: var(--brag-accent-contrast);
   border-bottom-right-radius: 2px;
 }
 .brag-message-assistant {
   align-self: flex-start;
-  background: #fff;
-  color: #1c2126;
-  border: 1px solid #dde1e6;
+  background: var(--brag-panel-bg);
+  color: var(--brag-text);
+  border: 1px solid var(--brag-border);
   border-bottom-left-radius: 2px;
 }
-.brag-typing { opacity: 0.6; font-style: italic; }
-.brag-citations { margin-top: 4px; font-size: 0.72rem; opacity: 0.7; }
+
+/* Typing indicator: three dots, animated — respects reduced-motion by
+   falling back to a static (non-pulsing) indicator instead of removing the
+   feedback entirely. */
+.brag-typing { display: flex; gap: 4px; padding: 12px; align-items: center; }
+.brag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brag-text-muted);
+  animation: brag-bounce 1.2s infinite ease-in-out;
+}
+.brag-dot:nth-child(2) { animation-delay: 0.15s; }
+.brag-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes brag-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brag-dot { animation: none; opacity: 0.7; }
+}
+
+.brag-suggestions { display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
+.brag-suggestion {
+  align-self: flex-start;
+  max-width: 90%;
+  padding: 8px 14px;
+  min-height: 36px;
+  border-radius: 18px;
+  border: 1px solid var(--brag-accent);
+  background: transparent;
+  color: var(--brag-accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.brag-suggestion:hover { background: var(--brag-accent); color: var(--brag-accent-contrast); }
+
+.brag-citations { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.brag-citation-item { display: flex; flex-direction: column; }
+.brag-citation-chip {
+  align-self: flex-start;
+  padding: 4px 10px;
+  min-height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--brag-border);
+  background: var(--brag-bg);
+  color: var(--brag-text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.brag-citation-chip:hover { border-color: var(--brag-accent); color: var(--brag-accent); }
+.brag-citation-snippet {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--brag-accent);
+  font-size: 0.78rem;
+  color: var(--brag-text-muted);
+  background: var(--brag-bg);
+}
 
 .brag-form {
   display: flex;
   gap: 8px;
   padding: 10px;
-  border-top: 1px solid #dde1e6;
+  border-top: 1px solid var(--brag-border);
 }
 .brag-input {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid #dde1e6;
+  min-height: 44px;
+  border: 1px solid var(--brag-border);
   border-radius: 20px;
   font: inherit;
+  color: var(--brag-text);
+  background: var(--brag-panel-bg);
 }
 .brag-send {
-  width: 36px;
-  height: 36px;
+  /* 44x44 minimum touch target (WCAG 2.5.8) — was 36x36, below threshold. */
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: none;
-  background: #0a5cff;
-  color: #fff;
+  background: var(--brag-accent);
+  color: var(--brag-accent-contrast);
   cursor: pointer;
+  flex-shrink: 0;
 }

@@ -13,6 +13,18 @@
 
 * { box-sizing: border-box; }
 
+*:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a;
+    --panel-bg: #1c2126;
+    --border: #33393f;
+    --text: #e6e8eb;
+    --muted: #9aa1a9;
+  }
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -39,12 +51,16 @@ header h1 { margin: 0 0 4px; font-size: 1.4rem; }
 #token-form { display: flex; flex-direction: column; gap: 8px; }
 #token-form input {
   padding: 10px 12px;
+  min-height: 44px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font-size: 0.95rem;
+  background: var(--panel-bg);
+  color: var(--text);
 }
-#token-form button, main button, .link-button {
+#token-form button, main button {
   padding: 10px 16px;
+  min-height: 44px;
   border: none;
   border-radius: var(--radius);
   background: var(--accent);
@@ -58,7 +74,7 @@ main { max-width: 960px; margin: 0 auto; padding: 24px 32px 64px; }
 
 .tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
 .tab-button {
-  background: none; border: none; padding: 10px 16px; cursor: pointer;
+  background: none; border: none; padding: 10px 16px; min-height: 44px; cursor: pointer;
   color: var(--muted); font-weight: 600; border-bottom: 2px solid transparent;
 }
 .tab-button.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -71,7 +87,7 @@ form {
   border-radius: var(--radius); padding: 20px; margin-bottom: 24px;
 }
 form label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; font-weight: 600; }
-form input, form select { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-weight: 400; }
+form input, form select { padding: 8px 10px; min-height: 44px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-weight: 400; background: var(--panel-bg); color: var(--text); }
 fieldset { border: 1px dashed var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 legend { font-size: 0.85rem; color: var(--muted); padding: 0 6px; }
 form button { align-self: flex-start; }
