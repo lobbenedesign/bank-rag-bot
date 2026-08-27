@@ -19,6 +19,13 @@ class FakeLLMClient:
     async def complete(self, system_prompt, messages, tools=None) -> LLMResponse:
         return self._response
 
+    async def stream_complete(self, system_prompt, messages, tools=None):
+        from bank_rag.application.ports.llm_client import LLMStreamChunk
+
+        if self._response.content:
+            yield LLMStreamChunk(content_delta=self._response.content, is_final=False)
+        yield LLMStreamChunk(content_delta="", is_final=True, response=self._response)
+
 
 class InMemoryCache:
     def __init__(self) -> None:
@@ -81,9 +88,10 @@ async def test_pii_is_masked_before_reaching_the_agent():
     captured_messages: list[dict] = []
 
     class CapturingLLMClient(FakeLLMClient):
-        async def complete(self, system_prompt, messages, tools=None):
+        async def stream_complete(self, system_prompt, messages, tools=None):
             captured_messages.extend(messages)
-            return self._response
+            async for chunk in super().stream_complete(system_prompt, messages, tools):
+                yield chunk
 
     llm = CapturingLLMClient(LLMResponse(content="Ok.", tool_calls=[], finish_reason="stop"))
     use_case = AnswerQuestion(
@@ -161,6 +169,14 @@ async def test_follow_up_question_is_resolved_before_retrieval():
         async def complete(self, system_prompt, messages, tools=None) -> LLMResponse:
             self.last_messages = messages
             return LLMResponse(content="Il bonifico è gratuito.", tool_calls=[], finish_reason="stop")
+
+        async def stream_complete(self, system_prompt, messages, tools=None):
+            from bank_rag.application.ports.llm_client import LLMStreamChunk
+
+            self.last_messages = messages
+            response = LLMResponse(content="Il bonifico è gratuito.", tool_calls=[], finish_reason="stop")
+            yield LLMStreamChunk(content_delta=response.content, is_final=False)
+            yield LLMStreamChunk(content_delta="", is_final=True, response=response)
 
     from bank_rag.domain.entities import ConversationTurn
 

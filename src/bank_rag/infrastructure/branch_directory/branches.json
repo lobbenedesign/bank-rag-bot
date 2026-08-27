@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Example Bank - Filiale Milano Centro",
+    "address": "Via Dante 12",
+    "city": "Milano",
+    "postal_code": "20121",
+    "phone": "+39 02 1234567",
+    "opening_hours": "Lun-Ven 8:30-13:30, 14:45-16:00"
+  },
+  {
+    "name": "Example Bank - Filiale Milano Navigli",
+    "address": "Ripa di Porta Ticinese 45",
+    "city": "Milano",
+    "postal_code": "20143",
+    "phone": "+39 02 7654321",
+    "opening_hours": "Lun-Ven 8:30-13:30, 14:45-16:00"
+  },
+  {
+    "name": "Example Bank - Filiale Roma Termini",
+    "address": "Via Marsala 8",
+    "city": "Roma",
+    "postal_code": "00185",
+    "phone": "+39 06 1112233",
+    "opening_hours": "Lun-Ven 8:20-13:20, 14:30-15:50"
+  },
+  {
+    "name": "Example Bank - Filiale Torino Porta Nuova",
+    "address": "Corso Vittorio Emanuele II 88",
+    "city": "Torino",
+    "postal_code": "10121",
+    "phone": "+39 011 4445566",
+    "opening_hours": "Lun-Ven 8:30-13:30, 14:45-16:00"
+  }
+]

@@ -1,18 +1,25 @@
 """Use case: AnswerQuestion. The only entry point the interface layer calls.
 
-Transport-agnostic on purpose — a REST endpoint, a WebSocket handler and a
-batch evaluation script all call the exact same use case, so behavior can't
-drift between them.
+Transport-agnostic on purpose — a REST endpoint, an SSE streaming endpoint,
+and a batch evaluation script all call the exact same use case, so behavior
+can't drift between them.
+
+`execute_streaming` is the ONLY real implementation, same reasoning as
+RouterAgent.handle_streaming: `execute` just drains it and returns the last
+Answer. One implementation means the topic/sentiment/pending-action
+guardrails can't silently behave differently for a streaming caller than a
+non-streaming one.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 from datetime import datetime, timezone
+from typing import AsyncIterator
 from uuid import uuid4
 
 from bank_rag.agents.confirmation_guardrail import ConfirmationGuardrail
-from bank_rag.agents.orchestrator import RouterAgent
+from bank_rag.agents.orchestrator import RouterAgent, StreamEvent
 from bank_rag.agents.sentiment_escalation_guardrail import ESCALATION_MESSAGE, SentimentEscalationGuardrail
 from bank_rag.agents.tool_registry import ToolRegistry
 from bank_rag.agents.topic_guardrail import OUT_OF_SCOPE_MESSAGE, TopicGuardrail
@@ -53,6 +60,14 @@ class AnswerQuestion:
         self._confirmation_guardrail = confirmation_guardrail
 
     async def execute(self, conversation: Conversation, question: str) -> Answer:
+        final_answer: Answer | None = None
+        async for event in self.execute_streaming(conversation, question):
+            if event.done:
+                final_answer = event.answer
+        assert final_answer is not None  # execute_streaming always ends with one done=True event
+        return final_answer
+
+    async def execute_streaming(self, conversation: Conversation, question: str) -> AsyncIterator[StreamEvent]:
         with trace_span("answer_question", conversation_id=str(conversation.id)):
             safe_question = self._pii_filter.mask(question)
             history_before = conversation.history_as_messages()
@@ -67,19 +82,22 @@ class AnswerQuestion:
                 answer = await self._resolve_pending_action(conversation, safe_question)
                 conversation.add(ConversationTurn(role="assistant", content=answer.text))
                 await self._record_audit(conversation, safe_question, safe_question, answer)
-                return answer
+                yield StreamEvent(delta=answer.text, done=True, answer=answer)
+                return
 
             if not await self._topic_guardrail.is_in_scope(safe_question):
                 answer = Answer(text=OUT_OF_SCOPE_MESSAGE, citations=[], intent=Intent.UNKNOWN, grounded=True)
                 conversation.add(ConversationTurn(role="assistant", content=answer.text))
                 await self._record_audit(conversation, safe_question, safe_question, answer)
-                return answer
+                yield StreamEvent(delta=answer.text, done=True, answer=answer)
+                return
 
             if await self._sentiment_escalation.needs_escalation(safe_question):
                 answer = Answer(text=ESCALATION_MESSAGE, citations=[], intent=Intent.HUMAN_HANDOFF, grounded=True)
                 conversation.add(ConversationTurn(role="assistant", content=answer.text))
                 await self._record_audit(conversation, safe_question, safe_question, answer)
-                return answer
+                yield StreamEvent(delta=answer.text, done=True, answer=answer)
+                return
 
             resolved_question = await self._query_rewriter.rewrite(history_before, safe_question)
 
@@ -87,17 +105,26 @@ class AnswerQuestion:
             if not conversation.is_authenticated:
                 cached = await self._cache.get(cache_key)
                 if cached is not None:
-                    return Answer(**json.loads(cached))
+                    answer = Answer(**json.loads(cached))
+                    yield StreamEvent(delta=answer.text, done=True, answer=answer)
+                    return
 
-            answer = await self._router_agent.handle(conversation, self._tools, resolved_question)
-            conversation.add(ConversationTurn(role="assistant", content=answer.text))
-            conversation.pending_action = answer.pending_action
+            async for event in self._router_agent.handle_streaming(conversation, self._tools, resolved_question):
+                if not event.done:
+                    yield event
+                    continue
 
-            if not conversation.is_authenticated and answer.grounded and answer.pending_action is None:
-                await self._cache.set(cache_key, json.dumps(answer.__dict__, default=str), CACHEABLE_TTL_SECONDS)
+                answer = event.answer
+                conversation.add(ConversationTurn(role="assistant", content=answer.text))
+                conversation.pending_action = answer.pending_action
 
-            await self._record_audit(conversation, safe_question, resolved_question, answer)
-            return answer
+                if not conversation.is_authenticated and answer.grounded and answer.pending_action is None:
+                    await self._cache.set(
+                        cache_key, json.dumps(answer.__dict__, default=str), CACHEABLE_TTL_SECONDS
+                    )
+
+                await self._record_audit(conversation, safe_question, resolved_question, answer)
+                yield event
 
     async def _resolve_pending_action(self, conversation: Conversation, reply: str) -> Answer:
         pending = conversation.pending_action

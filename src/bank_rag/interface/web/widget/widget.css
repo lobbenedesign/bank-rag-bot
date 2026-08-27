@@ -80,7 +80,14 @@
   font-weight: 600;
   font-size: 0.95rem;
 }
-.brag-close {
+.brag-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.brag-close,
+.brag-voice-toggle {
   /* 44x44 minimum touch target (WCAG 2.5.8) — the visible glyph stays
      small, the hit area does not. */
   width: 44px;
@@ -88,14 +95,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: -12px -12px -12px 0;
+  margin: -12px -6px -12px 0;
   background: none;
   border: none;
   color: var(--brag-accent-contrast);
-  font-size: 22px;
+  font-size: 20px;
   cursor: pointer;
   line-height: 1;
   border-radius: 8px;
+  opacity: 0.85;
+}
+.brag-close {
+  font-size: 22px;
+  margin-right: -12px;
+}
+.brag-voice-toggle-active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .brag-sr-only {
@@ -229,4 +245,29 @@
   color: var(--brag-accent-contrast);
   cursor: pointer;
   flex-shrink: 0;
+}
+
+.brag-mic {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--brag-border);
+  background: var(--brag-panel-bg);
+  color: var(--brag-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+.brag-mic-listening {
+  color: #fff;
+  background: #d32f2f;
+  border-color: #d32f2f;
+  animation: brag-mic-pulse 1s infinite;
+}
+@keyframes brag-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(211, 47, 47, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brag-mic-listening { animation: none; }
 }

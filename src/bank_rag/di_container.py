@@ -21,6 +21,7 @@ from bank_rag.agents.orchestrator import RouterAgent
 from bank_rag.agents.sentiment_escalation_guardrail import SentimentEscalationGuardrail
 from bank_rag.agents.tool_registry import ToolRegistry
 from bank_rag.agents.tools.account_balance_tool import AccountBalanceTool
+from bank_rag.agents.tools.branch_locator_tool import BranchLocatorTool
 from bank_rag.agents.tools.lock_card_tool import LockCardTool
 from bank_rag.agents.tools.rag_search_tool import RagSearchTool
 from bank_rag.agents.topic_guardrail import TopicGuardrail
@@ -30,6 +31,7 @@ from bank_rag.application.use_cases.manage_noindex_rules import ManageNoIndexRul
 from bank_rag.config.settings import Settings
 from bank_rag.domain.entities import Audience
 from bank_rag.infrastructure.bank_api.core_banking_client import CoreBankingHttpClient
+from bank_rag.infrastructure.branch_directory.static_branch_directory import StaticBranchDirectory
 from bank_rag.infrastructure.cache.redis_cache import RedisResponseCache
 from bank_rag.infrastructure.embeddings.openai_embedder import OpenAiEmbedder
 from bank_rag.infrastructure.keyword_index.opensearch_index import OpenSearchKeywordIndex
@@ -77,7 +79,8 @@ def build_answer_question_use_case(customer_id: str | None = None, is_authentica
         RagSearchTool(
             embedder, vector_store, keyword_index, reranker,
             allowed_audiences=allowed_audiences, top_k=settings.retrieval_top_k,
-        )
+        ),
+        BranchLocatorTool(StaticBranchDirectory()),
     ]
     if is_authenticated and customer_id:
         bank_api = CoreBankingHttpClient(settings.core_banking_base_url, settings.core_banking_service_token)

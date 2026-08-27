@@ -1,3 +1,5 @@
+import { VoiceController } from "./voice-controller.js";
+
 const GREETING = "Ciao! Sono l'assistente virtuale della banca. Come posso aiutarti oggi?";
 const ERROR_MESSAGE = "Si è verificato un problema. Riprova tra poco, oppure contatta un operatore.";
 
@@ -17,6 +19,8 @@ export class ChatUI {
     this.client = client;
     this.container = container;
     this._greeted = false;
+    this._voice = new VoiceController();
+    this._readAloud = false;
     this._render();
   }
 
@@ -26,13 +30,18 @@ export class ChatUI {
       <div class="brag-panel" data-role="panel" role="dialog" aria-modal="true" aria-label="Assistente Banca" hidden>
         <header class="brag-header">
           <span>Assistente Banca</span>
-          <button class="brag-close" data-role="close" aria-label="Chiudi la chat" type="button">×</button>
+          <div class="brag-header-actions">
+            <button class="brag-voice-toggle" data-role="voice-toggle" type="button"
+                    aria-label="Leggi le risposte ad alta voce" aria-pressed="false" hidden>🔊</button>
+            <button class="brag-close" data-role="close" aria-label="Chiudi la chat" type="button">×</button>
+          </div>
         </header>
         <div class="brag-messages" data-role="messages" aria-live="polite" aria-atomic="false"></div>
         <form class="brag-form" data-role="form">
           <label class="brag-sr-only" for="brag-input">Scrivi un messaggio</label>
           <input id="brag-input" class="brag-input" data-role="input" type="text"
                  placeholder="Scrivi un messaggio..." autocomplete="off">
+          <button type="button" class="brag-mic" data-role="mic" aria-label="Parla per scrivere" hidden>🎤</button>
           <button type="submit" class="brag-send" aria-label="Invia messaggio">➤</button>
         </form>
       </div>
@@ -43,6 +52,8 @@ export class ChatUI {
     this.messagesEl = this.container.querySelector('[data-role="messages"]');
     this.form = this.container.querySelector('[data-role="form"]');
     this.input = this.container.querySelector('[data-role="input"]');
+    this.micButton = this.container.querySelector('[data-role="mic"]');
+    this.voiceToggle = this.container.querySelector('[data-role="voice-toggle"]');
 
     this.bubble.addEventListener("click", () => this._open());
     this.container.querySelector('[data-role="close"]').addEventListener("click", () => this._close());
@@ -55,6 +66,34 @@ export class ChatUI {
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !this.panel.hidden) this._close();
     });
+
+    this._wireVoiceControls();
+  }
+
+  _wireVoiceControls() {
+    if (this._voice.canListen) {
+      this.micButton.hidden = false;
+      this.micButton.addEventListener("click", () => {
+        this.micButton.classList.add("brag-mic-listening");
+        this._voice.listen({
+          onResult: (transcript) => {
+            this.input.value = transcript;
+            this.input.focus();
+          },
+          onEnd: () => this.micButton.classList.remove("brag-mic-listening"),
+        });
+      });
+    }
+
+    if (this._voice.canSpeak) {
+      this.voiceToggle.hidden = false;
+      this.voiceToggle.addEventListener("click", () => {
+        this._readAloud = !this._readAloud;
+        this.voiceToggle.setAttribute("aria-pressed", String(this._readAloud));
+        this.voiceToggle.classList.toggle("brag-voice-toggle-active", this._readAloud);
+        if (!this._readAloud) this._voice.stopSpeaking();
+      });
+    }
   }
 
   _open() {
@@ -71,6 +110,7 @@ export class ChatUI {
   _close() {
     this.panel.hidden = true;
     this.bubble.hidden = false;
+    this._voice.stopSpeaking();
     this.bubble.focus(); // return focus to the trigger for keyboard/screen-reader users
   }
 
@@ -106,13 +146,38 @@ export class ChatUI {
   async _send(text) {
     this._addMessage("user", text);
     const typingEl = this._addTypingIndicator();
+    let assistantEl = null;
+    let accumulated = "";
+
+    const revealAssistantBubble = () => {
+      if (assistantEl) return;
+      typingEl.remove();
+      assistantEl = this._addMessage("assistant", "");
+    };
 
     try {
-      const answer = await this.client.sendMessage(text);
-      typingEl.remove();
-      this._addMessage("assistant", answer.answer, { citations: answer.citations });
+      await this.client.sendMessageStreaming(text, {
+        onDelta: (delta) => {
+          revealAssistantBubble();
+          accumulated += delta;
+          assistantEl.querySelector(".brag-message-text").textContent = accumulated;
+          this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+        },
+        onDone: (event) => {
+          revealAssistantBubble(); // covers the (rare) zero-delta case, e.g. a pending-action prompt
+          const finalText = accumulated || event.answer;
+          if (!accumulated) {
+            assistantEl.querySelector(".brag-message-text").textContent = finalText;
+          }
+          if (event.citations && event.citations.length) {
+            assistantEl.appendChild(this._renderCitations(event.citations));
+          }
+          if (this._readAloud) this._voice.speak(finalText);
+        },
+      });
     } catch {
       typingEl.remove();
+      assistantEl?.remove();
       this._addMessage("assistant", ERROR_MESSAGE);
     }
   }
@@ -130,7 +195,10 @@ export class ChatUI {
   _addMessage(role, text, { citations = [] } = {}) {
     const el = document.createElement("div");
     el.className = `brag-message brag-message-${role}`;
-    el.textContent = text;
+    const textEl = document.createElement("span");
+    textEl.className = "brag-message-text";
+    textEl.textContent = text;
+    el.appendChild(textEl);
     if (citations.length) {
       el.appendChild(this._renderCitations(citations));
     }

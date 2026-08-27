@@ -1,3 +1,19 @@
+## Streaming, localizzatore filiali, voce — le 3 migliorie "vere" senza compromessi
+
+Delle migliorie identificate nel confronto con i chatbot bancari reali, queste tre sono state implementate senza alcun mock: funzionano davvero, non solo architetturalmente.
+
+**Streaming (SSE)**. `RouterAgent.handle_streaming()` è diventata l'unica implementazione reale — `handle()` (non-streaming) ora la drena e restituisce solo l'ultima risposta. Stessa cosa per `AnswerQuestion.execute_streaming()`/`execute()`. Scelta deliberata, non ottimizzazione: due implementazioni parallele sarebbero due posti in cui il guardrail di grounding, il corto-circuito di conferma, o il fallback per max-iterazioni potrebbero divergere silenziosamente. Un'unica implementazione garantisce che streaming e non-streaming si comportino sempre allo stesso modo.
+
+Il punto delicato: il contenuto può essere rivelato in diretta al cliente **solo dopo che un tool ha già "grounded" il turno** (`used_tool=True`). Prima di quel momento il modello potrebbe rispondere senza chiamare alcun tool, e il guardrail esistente sostituisce quella risposta con `FALLBACK_TEXT` — se il testo fosse già stato mostrato token per token, la sostituzione arriverebbe troppo tardi. Verificato con due test dedicati (uno prova che zero testo grezzo raggiunge il cliente nel caso ungrounded, l'altro che lo streaming è realmente incrementale nel caso grounded).
+
+**Bug reale trovato aggiungendo il localizzatore filiali**: la logica di grounding controllava `tool.name == "search_knowledge_base"` specificamente — quindi una risposta legittimamente basata su `get_account_balance` o sul nuovo `find_branches` veniva **scartata e sostituita da FALLBACK_TEXT**, nonostante fosse corretta. Bug preesistente, esposto solo aggiungendo un secondo tool non-search. Corretto generalizzando a "qualunque tool eseguito con successo garantisce il turno", con test di regressione dedicato.
+
+**Localizzatore filiali**: `BranchLocatorTool` + `StaticBranchDirectory`, dati reali in `branches.json` (seed di esempio, sostituibile con l'elenco vero della banca) — nessun mock, se la banca fornisce coordinate/indirizzi reali il tool risponde correttamente per davvero.
+
+**Voce (lato browser)**: `VoiceController` avvolge le Web Speech API native (`SpeechRecognition`/`SpeechSynthesis`) — zero dipendenze nuove, zero backend coinvolto. Feature-detected: microfono e toggle "leggi ad alta voce" restano nascosti se il browser non le supporta (Safari/Firefox hanno supporto parziale). L'input vocale riempie il campo di testo invece di inviare automaticamente — scelta di sicurezza: un misriconoscimento vocale non deve mai innescare un'azione (es. una conferma di blocco carta) senza che il cliente riveda il testo.
+
+Suite completa: **78/78 test passano.**
+
 ## Smoke test end-to-end reale (server vero avviato, non solo unit test)
 
 Prima di questo punto, ogni verifica in questo progetto era `py_compile` (sintassi), unit test con fake (`ToolRegistry([])`, client fittizi), o file statici serviti senza backend. Qui invece: `uvicorn` avviato per davvero, con l'app FastAPI reale, senza Qdrant/OpenSearch/Postgres/Redis in esecuzione (disco della macchina troppo pieno per Docker — vedi nota sotto), per vedere fin dove il sistema regge senza infrastruttura.
