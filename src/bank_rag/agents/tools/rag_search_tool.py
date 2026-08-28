@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from typing import Any
+from typing import Any, ClassVar
 
 from bank_rag.application.ports.embedder import Embedder
 from bank_rag.application.ports.keyword_index import KeywordIndex
@@ -36,7 +36,7 @@ class RagSearchTool:
         "employee-uploaded documents. Use this whenever the customer asks about "
         "products, rates, procedures or policies."
     )
-    parameters_schema: dict[str, Any] = {
+    parameters_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"query": {"type": "string", "description": "search query"}},
         "required": ["query"],

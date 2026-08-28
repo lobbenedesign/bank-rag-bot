@@ -6,7 +6,7 @@ query shapes; hybrid retrieval fuses both (see agents/tools/rag_search_tool.py).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from fnmatch import fnmatch
 from uuid import UUID
 
@@ -92,7 +92,7 @@ class OpenSearchKeywordIndex:
             audience=Audience(source["audience"]),
             uploaded_by=None,
             version=source.get("version", 1),
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         locator = ChunkLocator(kind=source.get("locator_kind", "whole"), value=source.get("locator_value", "document"))
         return Chunk(

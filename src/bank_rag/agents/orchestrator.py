@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from bank_rag.agents.tool_registry import ToolRegistry
 from bank_rag.application.ports.llm_client import LLMClient, LLMResponse
@@ -70,7 +70,7 @@ class StreamEvent:
     event carries the final Answer and no further deltas follow it.
     """
 
-    __slots__ = ("delta", "done", "answer")
+    __slots__ = ("answer", "delta", "done")
 
     def __init__(self, delta: str = "", done: bool = False, answer: Answer | None = None) -> None:
         self.delta = delta

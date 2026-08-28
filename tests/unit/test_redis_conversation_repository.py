@@ -9,7 +9,7 @@ ever catch, because a fake never actually serializes anything.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from bank_rag.domain.entities import Conversation, ConversationTurn, PendingAction
@@ -18,8 +18,8 @@ from bank_rag.infrastructure.persistence.redis_conversation_repository import Re
 
 def test_round_trip_preserves_turns_and_no_pending_action():
     conversation = Conversation(customer_id="cust-42", is_authenticated=True)
-    conversation.add(ConversationTurn(role="user", content="ciao", timestamp=datetime.now(timezone.utc)))
-    conversation.add(ConversationTurn(role="assistant", content="Ciao!", timestamp=datetime.now(timezone.utc)))
+    conversation.add(ConversationTurn(role="user", content="ciao", timestamp=datetime.now(UTC)))
+    conversation.add(ConversationTurn(role="assistant", content="Ciao!", timestamp=datetime.now(UTC)))
 
     raw = RedisConversationRepository._serialize(conversation)
     restored = RedisConversationRepository._deserialize(raw)

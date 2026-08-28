@@ -6,7 +6,7 @@ upward into the application layer.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, Integer, String, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,5 +68,5 @@ class SqlDocumentRepository:
             audience=Audience(r.audience),
             uploaded_by=r.uploaded_by,
             version=r.version,
-            updated_at=r.updated_at or datetime.now(timezone.utc),
+            updated_at=r.updated_at or datetime.now(UTC),
         )

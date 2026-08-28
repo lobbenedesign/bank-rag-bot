@@ -42,6 +42,15 @@ testpaths = ["tests"]
 line-length = 110
 target-version = "py311"
 
+[tool.ruff.lint]
+# B008 (function-call-in-default-argument) flags every FastAPI route that
+# uses `param: X = Depends(get_x)` — that's the standard, safe FastAPI
+# dependency-injection idiom (Depends() is a sentinel FastAPI resolves per
+# request, not a mutable default shared across calls), not the mutable-
+# default-argument bug the rule exists to catch. Ignored project-wide since
+# nearly every route in src/bank_rag/api uses this pattern.
+ignore = ["B008"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

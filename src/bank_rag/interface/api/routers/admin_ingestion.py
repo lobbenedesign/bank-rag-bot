@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from bank_rag.application.use_cases.ingest_document import DocumentExcludedError
 from bank_rag.di_container import build_document_repository, get_settings
 from bank_rag.domain.entities import Audience
+from bank_rag.ingestion.loaders.file_loader import FileLoader, UnsupportedFileTypeError
 from bank_rag.interface.api.dependencies import (
     RequestIdentity,
     get_identity,
@@ -17,7 +18,6 @@ from bank_rag.interface.api.dependencies import (
     rate_limit,
 )
 from bank_rag.interface.api.schemas import DocumentResponse, IngestResponse
-from bank_rag.ingestion.loaders.file_loader import FileLoader, UnsupportedFileTypeError
 
 router = APIRouter(prefix="/admin/documents", tags=["admin"])
 _file_loader = FileLoader()

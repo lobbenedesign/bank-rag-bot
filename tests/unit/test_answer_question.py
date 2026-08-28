@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from bank_rag.agents.orchestrator import RouterAgent
-from bank_rag.agents.tool_registry import ToolRegistry
 from bank_rag.agents.sentiment_escalation_guardrail import ESCALATION_MESSAGE
+from bank_rag.agents.tool_registry import ToolRegistry
 from bank_rag.agents.topic_guardrail import OUT_OF_SCOPE_MESSAGE
 from bank_rag.application.ports.llm_client import LLMResponse
 from bank_rag.application.use_cases.answer_question import AnswerQuestion
@@ -178,7 +178,6 @@ async def test_follow_up_question_is_resolved_before_retrieval():
             yield LLMStreamChunk(content_delta=response.content, is_final=False)
             yield LLMStreamChunk(content_delta="", is_final=True, response=response)
 
-    from bank_rag.domain.entities import ConversationTurn
 
     llm = RecordingLLMClient()
     rewriter = RecordingQueryRewriter()

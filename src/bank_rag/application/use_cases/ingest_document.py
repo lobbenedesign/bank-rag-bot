@@ -12,7 +12,7 @@ lets the rest of the document through.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from bank_rag.application.ports.content_sanitizer import ContentSanitizer
@@ -76,7 +76,7 @@ class IngestDocument:
             audience=audience,
             uploaded_by=uploaded_by,
             version=previous_version + 1,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
 
         included_segments = [

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from bank_rag.application.use_cases.ingest_document import DocumentExcludedError
 from bank_rag.di_container import get_settings
+from bank_rag.ingestion.loaders.web_scraper import WebScraper
 from bank_rag.interface.api.dependencies import (
     RequestIdentity,
     get_identity,
@@ -15,7 +16,6 @@ from bank_rag.interface.api.dependencies import (
     rate_limit,
 )
 from bank_rag.interface.api.schemas import IngestResponse, IngestUrlRequest
-from bank_rag.ingestion.loaders.web_scraper import WebScraper
 
 router = APIRouter(prefix="/admin/urls", tags=["admin"])
 

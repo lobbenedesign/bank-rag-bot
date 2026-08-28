@@ -6,7 +6,8 @@ marked INTERNAL is physically never returned to a request that only allows
 PUBLIC, regardless of application-code bugs downstream.
 """
 from __future__ import annotations
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from fnmatch import fnmatch
 from uuid import UUID
 
@@ -100,7 +101,7 @@ class QdrantVectorStore:
             audience=Audience(payload["audience"]),
             uploaded_by=None,
             version=payload.get("version", 1),
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         locator = ChunkLocator(kind=payload.get("locator_kind", "whole"), value=payload.get("locator_value", "document"))
         return Chunk(

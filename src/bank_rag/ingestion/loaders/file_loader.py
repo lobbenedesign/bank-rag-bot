@@ -6,7 +6,7 @@ specific page/section/row-range of a file, not only ever the whole thing.
 """
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from bank_rag.domain.entities import DocumentSegment
 from bank_rag.ingestion.segmentation.csv_segmenter import segment_csv

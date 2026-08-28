@@ -6,7 +6,7 @@ the vector/keyword indexes — a different kind of "search", same pattern.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from bank_rag.application.ports.branch_directory import BranchDirectory
 
@@ -17,7 +17,7 @@ class BranchLocatorTool:
         "Finds the bank's physical branches near a city, postal code, or address the customer mentions. "
         "Use this when the customer asks where a branch is, or wants to visit one in person."
     )
-    parameters_schema: dict[str, Any] = {
+    parameters_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"query": {"type": "string", "description": "city, postal code, or address"}},
         "required": ["query"],

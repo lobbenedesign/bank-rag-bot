@@ -14,7 +14,7 @@ customer didn't mean to block — that's the bar this flag exists for.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from bank_rag.application.ports.bank_api_client import BankApiClient
 
@@ -26,7 +26,7 @@ class LockCardTool:
         "Use this when the customer reports a lost/stolen card or suspicious activity. "
         "This only proposes the action — it is executed after the customer confirms."
     )
-    parameters_schema: dict[str, Any] = {
+    parameters_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"card_id": {"type": "string", "description": "the card identifier to lock"}},
         "required": ["card_id"],

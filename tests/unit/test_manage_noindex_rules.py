@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from fnmatch import fnmatch
 
 import pytest
@@ -74,7 +74,7 @@ class InMemoryDocumentRepository:
 def _doc(source_id: str) -> DocumentMetadata:
     return DocumentMetadata(
         source_id=source_id, title=source_id, audience=Audience.PUBLIC,
-        uploaded_by="employee-1", version=1, updated_at=datetime.now(timezone.utc),
+        uploaded_by="employee-1", version=1, updated_at=datetime.now(UTC),
     )
 
 

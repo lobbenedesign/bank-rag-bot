@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
@@ -15,7 +15,7 @@ def _make_token(**overrides: object) -> str:
     payload = {
         "sub": "customer-123",
         "role": "customer",
-        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        "exp": datetime.now(UTC) + timedelta(hours=1),
         **overrides,
     }
     return jwt.encode(payload, SECRET, algorithm=ALGORITHM)
@@ -33,7 +33,7 @@ def test_decodes_valid_employee_token():
 
 
 def test_rejects_expired_token():
-    expired = _make_token(exp=datetime.now(timezone.utc) - timedelta(minutes=1))
+    expired = _make_token(exp=datetime.now(UTC) - timedelta(minutes=1))
     with pytest.raises(InvalidToken):
         decode_token(expired, SECRET, ALGORITHM)
 

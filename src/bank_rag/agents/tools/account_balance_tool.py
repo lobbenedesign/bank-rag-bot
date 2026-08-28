@@ -8,7 +8,7 @@ live, per-request, through an authorized API call.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from bank_rag.application.ports.bank_api_client import BankApiClient
 
@@ -16,7 +16,7 @@ from bank_rag.application.ports.bank_api_client import BankApiClient
 class AccountBalanceTool:
     name = "get_account_balance"
     description = "Returns the authenticated customer's balance for a given account id."
-    parameters_schema: dict[str, Any] = {
+    parameters_schema: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {"account_id": {"type": "string"}},
         "required": ["account_id"],

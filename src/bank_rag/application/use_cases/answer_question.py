@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from bank_rag.agents.confirmation_guardrail import ConfirmationGuardrail
@@ -151,7 +151,7 @@ class AnswerQuestion:
             return ACTION_FAILED_MESSAGE
         if "error" in data:
             return ACTION_FAILED_MESSAGE
-        if "locked" in data and data["locked"]:
+        if data.get("locked"):
             return f"Fatto — la carta {data.get('card_id', '')} è stata bloccata."
         return "Operazione completata."
 
@@ -169,7 +169,7 @@ class AnswerQuestion:
                 answer_text=answer.text,
                 intent=answer.intent,
                 grounded=answer.grounded,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
         )
 
