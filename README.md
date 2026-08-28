@@ -1,5 +1,156 @@
 # Bank RAG Bot
 
+[English](#english) | [Italiano](#italiano)
+
+---
+
+## English
+
+Agentic RAG chatbot for a bank's website: answers using both the site's
+public content and internal documents uploaded by bank employees, with
+grounding guardrails and RBAC on indexed data.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full rationale behind every
+architectural choice, and for what's still missing before production.
+
+### Screenshots
+
+Captured with headless Chrome against this repository's real static UI
+files — not graphic mockups. The widget conversation uses declared example
+response data (the backend needs Qdrant/OpenSearch/Postgres/Redis/OpenAI
+running, none of which were active for this capture); the admin UI uses
+example data for its tables (Postgres wasn't running either). The markup,
+CSS, and JS logic are the real, unmodified code — only the data behind them
+is a declared stand-in.
+
+#### Customer widget
+
+| Closed | Open (suggested questions) | Conversation (expanded citation) |
+|---|---|---|
+| ![Widget closed](docs/screenshots/widget-closed.png) | ![Widget open](docs/screenshots/widget-open.png) | ![Conversation](docs/screenshots/widget-conversation.png) |
+
+Real streaming responses (SSE), clickable citations with snippets,
+suggested questions, microphone/read-aloud via the browser's native Web
+Speech API (visible only when the browser supports it).
+
+#### Admin panel — ingestion
+
+| Login (JWT token) | Document management | Granular exclusions (no-index) |
+|---|---|---|
+| ![Login](docs/screenshots/admin-login.png) | ![Documents](docs/screenshots/admin-documents.png) | ![No-index](docs/screenshots/admin-noindex.png) |
+
+Upload for 8 formats (PDF/DOCX/MD/TXT/CSV/XLSX/JSON/XML), on-demand URL
+indexing, and exclusion from indexing either for a whole document or for a
+specific portion (page, section, row range — see the `page_paragraph: 4:*`
+rule in the screenshot, which excludes only one paragraph of one PDF page
+without touching the rest of the document).
+
+### Quickstart
+
+**Guided setup** (recommended — checks Docker, creates `.env` by asking for
+keys, brings up the containers, waits until they're ready, provisions
+Qdrant):
+
+```bash
+make setup
+```
+
+**Manual setup**, step by step:
+
+```bash
+cp .env.example .env   # fill in OPENAI_API_KEY, CORE_BANKING_*
+docker compose up -d qdrant opensearch redis postgres   # = make up
+python -m bank_rag.infrastructure.vector_stores.qdrant_bootstrap   # = make bootstrap
+pip install -e ".[dev]"
+uvicorn bank_rag.interface.api.main:app --reload   # = make run
+```
+
+Qdrant, OpenSearch, Redis, and Postgres are fully containerized — no manual
+installation on the host, just Docker. OpenAI is the one exception, since
+it's a paid external API, not self-hostable software — for a fully
+local/free setup, replace `OpenAiChatClient`/`OpenAiEmbedder` with an Ollama
+adapter behind the same `LLMClient`/`Embedder` ports.
+
+### Tests
+
+```bash
+pytest
+```
+
+### Main endpoints
+
+- `POST /chat` — customer message (authenticated or anonymous) -> grounded answer + citations.
+- `POST /admin/documents` — file upload (PDF/DOCX/MD/TXT/CSV/XLSX/JSON/XML) by an employee (requires an employee token).
+- `GET /admin/documents` — list of indexed documents.
+- `POST /admin/urls` — indexes a single site page on demand (in addition to the periodic sync in `ingestion/pipeline.py`).
+- `GET/POST/DELETE /admin/noindex` — indexing-exclusion rules, for a whole document or a specific portion (page/section/row — see ARCHITECTURE.md).
+- `GET /health`
+
+### Web interfaces
+
+Two static UIs (plain HTML/CSS/JS, no framework, no build step), served by
+the same FastAPI app as a presentation layer on top of the JSON API — zero
+duplicated business logic:
+
+- **`/admin-ui/`** — employee panel: file upload, on-demand URL indexing, no-index rule management (including granular page/section rules). Requires an employee JWT, entered manually and kept only in `sessionStorage` (never persisted).
+- **`/widget/`** — customer chat widget, embeddable in the bank's site with a single `<script type="module">` tag. `/widget/index.html` is a demo page showing the real integration.
+
+### The RAG architecture, honestly
+
+**Retrieval pipeline**: vector search (Qdrant) + lexical BM25 (OpenSearch),
+fused with Reciprocal Rank Fusion, then narrowed by a cross-encoder
+reranker to the final `top_k` — not vector similarity alone, because that
+alone loses exact terms (product codes, percentages) typical of banking
+documents. Full rationale in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+**Guardrails, not just prompt instructions**: a scope filter (rejects
+non-banking questions before spending an agent loop on them), escalation on
+customer frustration, explicit confirmation before executing high-risk
+actions (locking a card), RBAC on vectors enforced server-side (never at
+the prompt level), a prompt-injection sanitizer on uploaded documents, an
+append-only audit trail.
+
+**What's actually been verified, not just written**: 78 unit tests
+(in-memory fakes, zero network), plus a smoke test with `uvicorn` actually
+running and real HTTP requests (routing, JWT, rate limiting) — see the
+"End-to-end smoke test" section in ARCHITECTURE.md for the exact outcome
+and the two real bugs found that way (not by the tests).
+
+**What has never been verified against real services**: an actual answer
+with Qdrant/OpenSearch/Postgres/Redis/OpenAI all running together — not
+done in this session due to disk space constraints on the development
+machine, stated explicitly, not hidden.
+
+**What's still out of scope, listed plainly**: money transfers/payments via
+chat (excluded on purpose, not forgotten — see the RouterAgent's system
+prompt), transaction history and budgeting (would need a real core-banking
+system behind `BankApiClient`, which here is an HTTP client to a system
+that doesn't exist), multi-channel WhatsApp/SMS (needs real business
+accounts I don't have). Full list with reasoning in ARCHITECTURE.md.
+
+### Structure
+
+```
+src/bank_rag/
+  domain/            pure entities, no external dependency
+  application/
+    ports/            interfaces (Protocol) toward every external system
+    use_cases/         AnswerQuestion, IngestDocument, ManageNoIndexRules
+  agents/              RouterAgent + ToolRegistry + Tools (the "agentic" layer)
+  infrastructure/      concrete adapters: Qdrant, OpenSearch, OpenAI, Redis, SQL, core banking
+  ingestion/           pipeline + per-format segmenters (segmentation/)
+  interface/
+    api/               FastAPI: thin routers, no business logic
+    web/               the two static UIs (admin/, widget/)
+  observability/       OpenTelemetry tracing + offline RAGAS eval
+  config/              Settings (pydantic-settings, from env/.env)
+  di_container.py       the single place wiring ports -> adapters
+```
+
+---
+
+## Italiano
+
 Chatbot agentico per il sito di una banca: risponde usando sia i contenuti
 pubblici del sito sia documenti interni caricati dai dipendenti, con
 guardrail di grounding e RBAC sui dati indicizzati.
@@ -7,11 +158,11 @@ guardrail di grounding e RBAC sui dati indicizzati.
 Vedi [ARCHITECTURE.md](ARCHITECTURE.md) per il razionale delle scelte
 architetturali e cosa manca ancora per la produzione.
 
-## Screenshot
+### Screenshot
 
 Catturati con Chrome headless contro le UI statiche reali di questo repository — non mockup grafici. Il widget usa dati di risposta di esempio (dichiarati come tali: il backend richiede Qdrant/OpenSearch/Postgres/Redis/OpenAI in esecuzione, non attivi in questa cattura), la UI admin usa dati di esempio per la tabella (backend Postgres non in esecuzione). Il markup, il CSS e la logica JS sono quelli reali, non modificati per lo screenshot.
 
-### Widget cliente
+#### Widget cliente
 
 | Chiuso | Aperto (domande suggerite) | Conversazione (citazione espansa) |
 |---|---|---|
@@ -19,7 +170,7 @@ Catturati con Chrome headless contro le UI statiche reali di questo repository �
 
 Streaming reale della risposta (SSE), citazioni cliccabili con snippet, domande suggerite, microfono/lettura vocale via Web Speech API nativa del browser (visibili solo se il browser le supporta).
 
-### Pannello admin — ingestion
+#### Pannello admin — ingestion
 
 | Accesso (token JWT) | Gestione documenti | Esclusioni granulari (no-index) |
 |---|---|---|
@@ -27,7 +178,7 @@ Streaming reale della risposta (SSE), citazioni cliccabili con snippet, domande 
 
 Upload di 8 formati (PDF/DOCX/MD/TXT/CSV/XLSX/JSON/XML), indicizzazione URL on-demand, ed esclusione dall'indicizzazione sia per intero documento sia per porzione specifica (pagina, sezione, riga — vedi la riga `page_paragraph: 4:*` nello screenshot, che esclude solo un paragrafo di una pagina di un PDF senza toccare il resto).
 
-## Quickstart
+### Quickstart
 
 **Setup guidato** (consigliato — controlla Docker, crea `.env` chiedendo le chiavi, alza i container, aspetta che siano pronti, provisiona Qdrant):
 
@@ -51,13 +202,13 @@ perché è un'API esterna a pagamento, non software auto-ospitabile — per un
 setup completamente locale/gratuito, sostituire `OpenAiChatClient`/`OpenAiEmbedder`
 con un adapter Ollama dietro le stesse porte `LLMClient`/`Embedder`.
 
-## Test
+### Test
 
 ```bash
 pytest
 ```
 
-## Endpoint principali
+### Endpoint principali
 
 - `POST /chat` — messaggio utente (autenticato o anonimo) -> risposta grounded + citazioni.
 - `POST /admin/documents` — upload file (PDF/DOCX/MD/TXT/CSV/XLSX/JSON/XML) da parte di un dipendente (richiede token employee).
@@ -66,14 +217,14 @@ pytest
 - `GET/POST/DELETE /admin/noindex` — regole di esclusione dall'indicizzazione, per intero documento o per porzione (pagina/sezione/riga — vedi ARCHITECTURE.md).
 - `GET /health`
 
-## Interfacce web
+### Interfacce web
 
 Due UI statiche (HTML/CSS/JS puro, nessun framework, nessuna build), servite dalla stessa app FastAPI come layer di presentazione sopra l'API JSON — zero logica di business duplicata:
 
 - **`/admin-ui/`** — pannello per i dipendenti: upload file, indicizzazione URL on-demand, gestione regole no-index (incluse quelle granulari per pagina/sezione). Richiede un token JWT employee, inserito manualmente e tenuto solo in `sessionStorage` (mai persistito).
 - **`/widget/`** — widget chat per i clienti, incorporabile nel sito della banca con un solo `<script type="module">`. `/widget/index.html` è una pagina dimostrativa che mostra l'integrazione reale.
 
-## Architettura del RAG, onesta
+### Architettura del RAG, onesta
 
 **Pipeline di retrieval**: vector search (Qdrant) + BM25 lessicale (OpenSearch), fusi con Reciprocal Rank Fusion, poi ridotti con un reranker cross-encoder ai `top_k` finali — non solo similarità vettoriale, perché quest'ultima da sola perde termini esatti (codici prodotto, percentuali) tipici di documenti bancari. Dettagli e motivazioni in [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -85,7 +236,7 @@ Due UI statiche (HTML/CSS/JS puro, nessun framework, nessuna build), servite dal
 
 **Cosa resta fuori scope, elencato senza giri di parole**: bonifici/pagamenti via chat (esclusi di proposito, non per dimenticanza — vedi il system prompt del RouterAgent), storico transazioni e budgeting (richiederebbero un vero core banking dietro `BankApiClient`, che qui è un client HTTP verso un sistema che non esiste), multi-canale WhatsApp/SMS (richiede account business reali che non ho). Elenco completo con motivazioni in ARCHITECTURE.md.
 
-## Struttura
+### Struttura
 
 ```
 src/bank_rag/
