@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     allowed_scrape_domain: str = "www.example-bank.it"
     router_max_iterations: int = 4
     retrieval_top_k: int = 5
+    # Minimum cosine similarity for a vector hit to reach the reranker at
+    # all. None (default) disables it — deliberately not defaulted to a
+    # specific cutoff, because the "right" number depends on the embedding
+    # model and real query distribution, which this project has never run
+    # against live traffic. Recommended starting point once tuned against a
+    # real Qdrant collection: ~0.75-0.82 (text-embedding-3-small).
+    retrieval_score_threshold: float | None = None
 
     jwt_secret: str
     jwt_algorithm: str = "HS256"

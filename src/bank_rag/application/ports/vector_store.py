@@ -31,9 +31,18 @@ class VectorStore(Protocol):
         query_embedding: list[float],
         top_k: int,
         allowed_audiences: list[Audience],
+        score_threshold: float | None = None,
     ) -> list[Chunk]:
         """Vector similarity search, pre-filtered by audience at the DB level
         (metadata filter), never post-filtered in application code — a chunk
-        the caller is not allowed to see must never leave the store.
+        the caller is not allowed to see must never leave the store. Also
+        excludes, server-side, any chunk whose `valid_until` has passed (see
+        DocumentMetadata) — an expired rate sheet is never a valid answer
+        regardless of similarity score.
+
+        `score_threshold`: when set, Qdrant drops candidates below this
+        cosine-similarity score before they ever reach the reranker — a
+        question with genuinely no relevant match should surface as "no
+        results", not the least-bad of an irrelevant top_k.
         """
         ...

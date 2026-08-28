@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from bank_rag.agents.confirmation_guardrail import ConfirmationGuardrail
+from bank_rag.agents.numeric_grounding_guardrail import NUMERIC_UNVERIFIED_MESSAGE, NumericGroundingGuardrail
 from bank_rag.agents.orchestrator import RouterAgent, StreamEvent
 from bank_rag.agents.sentiment_escalation_guardrail import ESCALATION_MESSAGE, SentimentEscalationGuardrail
 from bank_rag.agents.tool_registry import ToolRegistry
@@ -48,6 +49,7 @@ class AnswerQuestion:
         topic_guardrail: TopicGuardrail,
         sentiment_escalation: SentimentEscalationGuardrail,
         confirmation_guardrail: ConfirmationGuardrail,
+        numeric_grounding: NumericGroundingGuardrail,
     ) -> None:
         self._router_agent = router_agent
         self._tools = tool_registry
@@ -58,6 +60,7 @@ class AnswerQuestion:
         self._topic_guardrail = topic_guardrail
         self._sentiment_escalation = sentiment_escalation
         self._confirmation_guardrail = confirmation_guardrail
+        self._numeric_grounding = numeric_grounding
 
     async def execute(self, conversation: Conversation, question: str) -> Answer:
         final_answer: Answer | None = None
@@ -115,6 +118,28 @@ class AnswerQuestion:
                     continue
 
                 answer = event.answer
+
+                # Maker-Checker pass on numeric claims (rates, fees, TAN/TAEG):
+                # `grounded` only proves a tool backed *some* part of the
+                # answer, not that this specific number matches the source —
+                # see numeric_grounding_guardrail.py. Runs before the answer
+                # is added to the transcript/cached/audited, so an unverified
+                # number is never treated as trustworthy downstream, even
+                # though (documented limitation) it may already have
+                # streamed live to the customer if a tool grounded an
+                # earlier iteration of this same turn.
+                needs_check = answer.grounded and answer.pending_action is None
+                if needs_check and not await self._numeric_grounding.is_verified(answer.text, answer.citations):
+                    answer = Answer(
+                        text=NUMERIC_UNVERIFIED_MESSAGE, citations=answer.citations,
+                        intent=answer.intent, grounded=False,
+                    )
+                    # The client always displays the `done` event's text
+                    # verbatim, overwriting whatever streamed live (see
+                    # chat-ui.js onDone) — so this correction, though not
+                    # instant, is still what the customer reads.
+                    event = StreamEvent(done=True, answer=answer)
+
                 conversation.add(ConversationTurn(role="assistant", content=answer.text))
                 conversation.pending_action = answer.pending_action
 

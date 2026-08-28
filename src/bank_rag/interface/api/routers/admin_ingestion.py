@@ -5,6 +5,8 @@ edge — a customer-facing token can never reach IngestDocument.execute.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from bank_rag.application.use_cases.ingest_document import DocumentExcludedError
@@ -31,6 +33,10 @@ _file_loader = FileLoader()
 async def upload_document(
     title: str = Form(...),
     audience: Audience = Form(default=Audience.INTERNAL),
+    # Optional: for rate sheets / time-limited offers. A document with no
+    # expiry (the common case: procedures, general terms) omits this — None
+    # means "never expires", not "expires immediately".
+    valid_until: date | None = Form(default=None),
     file: UploadFile = File(...),
     identity: RequestIdentity = Depends(get_identity),
 ) -> IngestResponse:
@@ -51,6 +57,7 @@ async def upload_document(
             segments=segments,
             audience=audience,
             uploaded_by=identity.customer_id or "unknown",
+            valid_until=valid_until,
         )
     except DocumentExcludedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

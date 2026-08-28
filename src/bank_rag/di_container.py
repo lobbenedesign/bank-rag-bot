@@ -17,6 +17,7 @@ from redis.asyncio import from_url as redis_from_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from bank_rag.agents.confirmation_guardrail import ConfirmationGuardrail
+from bank_rag.agents.numeric_grounding_guardrail import NumericGroundingGuardrail
 from bank_rag.agents.orchestrator import RouterAgent
 from bank_rag.agents.sentiment_escalation_guardrail import SentimentEscalationGuardrail
 from bank_rag.agents.tool_registry import ToolRegistry
@@ -79,6 +80,7 @@ def build_answer_question_use_case(customer_id: str | None = None, is_authentica
         RagSearchTool(
             embedder, vector_store, keyword_index, reranker,
             allowed_audiences=allowed_audiences, top_k=settings.retrieval_top_k,
+            score_threshold=settings.retrieval_score_threshold,
         ),
         BranchLocatorTool(StaticBranchDirectory()),
     ]
@@ -95,10 +97,11 @@ def build_answer_question_use_case(customer_id: str | None = None, is_authentica
     topic_guardrail = TopicGuardrail(llm_client)
     sentiment_escalation = SentimentEscalationGuardrail(llm_client)
     confirmation_guardrail = ConfirmationGuardrail(llm_client)
+    numeric_grounding = NumericGroundingGuardrail(llm_client)
 
     return AnswerQuestion(
         router_agent, ToolRegistry(tools), pii_filter, cache, query_rewriter, audit_log,
-        topic_guardrail, sentiment_escalation, confirmation_guardrail,
+        topic_guardrail, sentiment_escalation, confirmation_guardrail, numeric_grounding,
     )
 
 

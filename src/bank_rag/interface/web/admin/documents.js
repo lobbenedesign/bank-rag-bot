@@ -43,6 +43,11 @@ export function wireUploadForm(formEl, onDone) {
     statusEl.className = "status";
     try {
       const formData = new FormData(formEl);
+      // An empty date input still submits as "" via FormData, which the
+      // backend's `date | None` field rejects (not a valid ISO date) —
+      // omit it entirely so FastAPI's own default (None, "no expiry")
+      // applies, instead of sending a value that fails validation.
+      if (!formData.get("valid_until")) formData.delete("valid_until");
       const result = await api.uploadDocument(formData);
       statusEl.textContent = `Indicizzato: ${result.chunks_indexed} chunk da "${result.source_id}".`;
       statusEl.className = "status status-ok";

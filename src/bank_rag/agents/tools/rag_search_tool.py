@@ -53,6 +53,7 @@ class RagSearchTool:
         allowed_audiences: list[Audience],
         top_k: int = 5,
         candidate_pool: int = 15,
+        score_threshold: float | None = None,
     ) -> None:
         self._embedder = embedder
         self._vector_store = vector_store
@@ -61,6 +62,14 @@ class RagSearchTool:
         self._allowed_audiences = allowed_audiences
         self._top_k = top_k
         self._candidate_pool = candidate_pool
+        # Below this cosine-similarity score, a vector hit is dropped before
+        # it ever reaches the reranker — the reranker only picks the least-
+        # bad among candidates handed to it, it can't recognize "none of
+        # these are actually relevant". Applied only on the vector side:
+        # BM25 has its own, differently-scaled relevance score, and a
+        # lexical exact-term match is meaningful evidence on its own even
+        # when the embedding similarity would be low.
+        self._score_threshold = score_threshold
 
     async def run(self, query: str) -> str:
         try:
@@ -90,7 +99,10 @@ class RagSearchTool:
         self, query: str, query_embedding: list[float]
     ) -> tuple[list[Chunk], list[Chunk]]:
         vector_hits = await self._vector_store.search(
-            query_embedding, top_k=self._candidate_pool, allowed_audiences=self._allowed_audiences
+            query_embedding,
+            top_k=self._candidate_pool,
+            allowed_audiences=self._allowed_audiences,
+            score_threshold=self._score_threshold,
         )
         keyword_hits = await self._keyword_index.search(
             query, top_k=self._candidate_pool, allowed_audiences=self._allowed_audiences

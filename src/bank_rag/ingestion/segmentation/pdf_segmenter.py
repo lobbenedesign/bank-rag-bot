@@ -15,6 +15,22 @@ open-sourcing this codebase or buying a commercial license. pdfplumber
 (MIT, built on pdfminer.six) has no such constraint. This is a licensing
 decision, not just a technical one, and it belongs in a banking codebase's
 paper trail as much as any security control does.
+
+Tables (rate sheets are almost always a table of duration x rate): the
+paragraph-gap heuristic above reads a table left-to-right, top-to-bottom
+as if it were prose, which silently destroys the row/column alignment
+between e.g. "30 years" and "3.50%" — exactly the failure mode that matters
+most for a banking document. `page.find_tables()` (pdfplumber's own
+line/rect-based table detector) locates each table's bounding box; its
+cells are rendered as a real Markdown table (an LLM reads Markdown table
+structure correctly, unlike flattened prose) and emitted as its own
+DocumentSegment/chunk. Text lines that fall inside a detected table's
+bounding box are then excluded from the paragraph grouping below, so the
+table's content is never duplicated (once correctly, as Markdown; a second
+time, garbled, as a "paragraph"). Honest limitation: detection needs
+visible ruling lines/borders in the PDF — a table with no drawn grid
+(spacing-only alignment) is not detected and falls through to the
+paragraph path like before this change, unchanged behavior.
 """
 from __future__ import annotations
 
@@ -36,13 +52,46 @@ def segment_pdf(content: bytes) -> list[DocumentSegment]:
 
     with pdfplumber.open(io.BytesIO(content)) as pdf:
         for page_index, page in enumerate(pdf.pages, start=1):
+            tables = page.find_tables()
+            for table_index, table in enumerate(tables, start=1):
+                markdown = _table_to_markdown(table.extract())
+                if markdown:
+                    locator = ChunkLocator(kind="page_table", value=f"{page_index}:{table_index}")
+                    segments.append(DocumentSegment(text=markdown, locator=locator))
+
+            table_bboxes = [t.bbox for t in tables]
             lines = page.extract_text_lines(layout=False) or []
+            lines = [line for line in lines if not _line_inside_any(line, table_bboxes)]
             for paragraph_index, paragraph_text in enumerate(_group_into_paragraphs(lines), start=1):
                 if paragraph_text:
                     locator = ChunkLocator(kind="page_paragraph", value=f"{page_index}:{paragraph_index}")
                     segments.append(DocumentSegment(text=paragraph_text, locator=locator))
 
     return segments
+
+
+def _table_to_markdown(rows: list[list[str | None]]) -> str:
+    """Real GitHub-flavored Markdown table — the format LLMs reliably parse
+    back into rows/columns, unlike a flattened space-joined string."""
+    clean_rows = [[(cell or "").strip().replace("\n", " ") for cell in row] for row in rows if any(row)]
+    if not clean_rows:
+        return ""
+    header, *body = clean_rows
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join("---" for _ in header) + " |",
+        *("| " + " | ".join(row) + " |" for row in body),
+    ]
+    return "\n".join(lines)
+
+
+def _line_inside_any(line: dict, bboxes: list[tuple[float, float, float, float]]) -> bool:
+    # Midpoint containment, not strict full-overlap: a text line's bbox can
+    # extend a point or two past a table's detected border due to rendering
+    # rounding, which a strict "fully inside" check would miss entirely.
+    mid_y = (line["top"] + line["bottom"]) / 2
+    mid_x = (line["x0"] + line["x1"]) / 2
+    return any(x0 <= mid_x <= x1 and top <= mid_y <= bottom for x0, top, x1, bottom in bboxes)
 
 
 def _group_into_paragraphs(lines: list[dict]) -> list[str]:

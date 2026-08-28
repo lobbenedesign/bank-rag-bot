@@ -189,3 +189,48 @@ def test_pdf_with_no_extractable_text_yields_no_segments():
     content = bytes(pdf.output())
 
     assert segment_pdf(content) == []
+
+
+def test_pdf_table_becomes_a_real_markdown_table_not_flattened_prose():
+    """A rate table read left-to-right as prose loses the row/column
+    alignment between a duration and its rate — the exact failure mode a
+    banking rate sheet cannot tolerate. This exercises the real fix: a
+    detected table (fpdf2's own bordered `pdf.table()`, which draws real
+    ruling lines pdfplumber's find_tables() can detect) becomes its own
+    Markdown-table segment, and the table's own text is excluded from the
+    surrounding paragraph text (not duplicated, not garbled).
+    """
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    pdf.cell(0, 10, "Foglio tassi mutuo giovani", new_x="LMARGIN", new_y="NEXT")
+    with pdf.table() as table:
+        header = table.row()
+        for h in ("Durata", "Tasso Fisso", "Tasso Variabile"):
+            header.cell(h)
+        for values in (("20 anni", "3.25%", "2.90%"), ("30 anni", "3.50%", "3.10%")):
+            row = table.row()
+            for v in values:
+                row.cell(v)
+    content = bytes(pdf.output())
+
+    segments = segment_pdf(content)
+
+    table_segments = [s for s in segments if s.locator.kind == "page_table"]
+    assert len(table_segments) == 1
+    assert table_segments[0].locator.value == "1:1"
+    table_text = table_segments[0].text
+    # A real Markdown table: header row, separator row, one row per data row —
+    # not "Durata Tasso Fisso Tasso Variabile 20 anni 3.25% 2.90% ..." mashed together.
+    assert table_text.splitlines()[0] == "| Durata | Tasso Fisso | Tasso Variabile |"
+    assert "| --- | --- | --- |" in table_text
+    assert "| 20 anni | 3.25% | 2.90% |" in table_text
+    assert "| 30 anni | 3.50% | 3.10% |" in table_text
+
+    # The table's own cell text must not also leak into a paragraph segment
+    # (would mean the exclusion-by-bbox logic isn't working).
+    paragraph_segments = [s for s in segments if s.locator.kind == "page_paragraph"]
+    assert not any("3.25%" in s.text for s in paragraph_segments)
+    assert any("Foglio tassi mutuo giovani" in s.text for s in paragraph_segments)

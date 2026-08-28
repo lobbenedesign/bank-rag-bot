@@ -12,7 +12,7 @@ lets the rest of the document through.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from bank_rag.application.ports.content_sanitizer import ContentSanitizer
@@ -59,6 +59,7 @@ class IngestDocument:
         segments: list[DocumentSegment],
         audience: Audience,
         uploaded_by: str,
+        valid_until: date | None = None,
     ) -> int:
         if await self._noindex.is_excluded(source_id):
             raise DocumentExcludedError(
@@ -77,6 +78,7 @@ class IngestDocument:
             uploaded_by=uploaded_by,
             version=previous_version + 1,
             updated_at=datetime.now(UTC),
+            valid_until=valid_until,
         )
 
         included_segments = [
@@ -85,7 +87,10 @@ class IngestDocument:
             if not await self._noindex.is_excluded(source_id, segment.locator)
         ]
 
-        chunk_pairs = self._chunker.split_segments(included_segments)
+        # title prepended into every chunk's text (see SemanticChunker) so
+        # an isolated fact ("la commissione è dell'1%") keeps its subject
+        # once it's out of the source document — see chunker docstring.
+        chunk_pairs = self._chunker.split_segments(included_segments, title=title)
         texts = [text for text, _ in chunk_pairs]
         embeddings = await self._embedder.embed_documents(texts) if texts else []
         chunks = [

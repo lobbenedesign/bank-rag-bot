@@ -5,7 +5,7 @@ This module must never import from `infrastructure`, `interface` or any SDK.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import Enum
 from uuid import UUID, uuid4
 
@@ -34,6 +34,12 @@ class DocumentMetadata:
     uploaded_by: str | None
     version: int
     updated_at: datetime
+    # Rate sheets and time-limited offers expire; a chunk whose valid_until
+    # has passed must never be retrievable, regardless of audience — a bank
+    # chatbot quoting a lapsed promotional rate is a compliance incident,
+    # not a stale-cache inconvenience. None means "no expiry" (most
+    # documents: general terms, procedures, branch info).
+    valid_until: date | None = None
 
 
 @dataclass(frozen=True)

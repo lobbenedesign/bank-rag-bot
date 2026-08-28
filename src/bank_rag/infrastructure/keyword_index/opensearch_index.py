@@ -3,16 +3,34 @@
 Kept as its own index rather than "just use the vector DB's filter" because
 lexical (term-exact) search and semantic (embedding) search fail on different
 query shapes; hybrid retrieval fuses both (see agents/tools/rag_search_tool.py).
+
+`valid_until` (see DocumentMetadata) is filtered here too, not only in
+QdrantVectorStore: hybrid retrieval fuses hits from both indexes (Reciprocal
+Rank Fusion in rag_search_tool.py), so an expired rate sheet excluded only
+on the vector side could still reach the customer via a BM25 keyword match.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from fnmatch import fnmatch
 from uuid import UUID
 
 from opensearchpy import AsyncOpenSearch
 
 from bank_rag.domain.entities import Audience, Chunk, ChunkLocator, DocumentMetadata
+
+# Same sentinel as QdrantVectorStore (see that module's docstring for why):
+# a real, always-present integer instead of a missing/null field, so the
+# expiry check is a single unconditional range query on both indexes — one
+# fewer "does this filter engine really implement is_null/exists the way
+# its docs claim" question to carry across two different databases.
+_NO_EXPIRY_SENTINEL = int(datetime(9999, 12, 31, tzinfo=UTC).timestamp())
+
+
+def _valid_until_ts(valid_until: date | None) -> int:
+    if valid_until is None:
+        return _NO_EXPIRY_SENTINEL
+    return int(datetime(valid_until.year, valid_until.month, valid_until.day, tzinfo=UTC).timestamp())
 
 
 class OpenSearchKeywordIndex:
@@ -33,6 +51,7 @@ class OpenSearchKeywordIndex:
                     "version": chunk.metadata.version,
                     "locator_kind": chunk.locator.kind,
                     "locator_value": chunk.locator.value,
+                    "valid_until_ts": _valid_until_ts(chunk.metadata.valid_until),
                 },
             )
 
@@ -69,6 +88,7 @@ class OpenSearchKeywordIndex:
         return len(matching_ids)
 
     async def search(self, query_text: str, top_k: int, allowed_audiences: list[Audience]) -> list[Chunk]:
+        now_ts = int(datetime.now(UTC).timestamp())
         response = await self._client.search(
             index=self._index,
             body={
@@ -76,7 +96,10 @@ class OpenSearchKeywordIndex:
                 "query": {
                     "bool": {
                         "must": [{"match": {"text": query_text}}],
-                        "filter": [{"terms": {"audience": [a.value for a in allowed_audiences]}}],
+                        "filter": [
+                            {"terms": {"audience": [a.value for a in allowed_audiences]}},
+                            {"range": {"valid_until_ts": {"gte": now_ts}}},
+                        ],
                     }
                 },
             },
@@ -86,6 +109,8 @@ class OpenSearchKeywordIndex:
     @staticmethod
     def _to_chunk(hit: dict) -> Chunk:
         source = hit["_source"]
+        valid_until_ts = source.get("valid_until_ts")
+        has_real_expiry = valid_until_ts is not None and valid_until_ts != _NO_EXPIRY_SENTINEL
         metadata = DocumentMetadata(
             source_id=source["document_id"],
             title=source.get("title", ""),
@@ -93,6 +118,7 @@ class OpenSearchKeywordIndex:
             uploaded_by=None,
             version=source.get("version", 1),
             updated_at=datetime.now(UTC),
+            valid_until=datetime.fromtimestamp(valid_until_ts, tz=UTC).date() if has_real_expiry else None,
         )
         locator = ChunkLocator(kind=source.get("locator_kind", "whole"), value=source.get("locator_value", "document"))
         return Chunk(

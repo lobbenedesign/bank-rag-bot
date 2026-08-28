@@ -1,3 +1,105 @@
+## Data governance sul vector DB, chunking bancario, Maker-Checker sui numeri (2026-08-28)
+
+Confronto puntuale tra una risposta da colloquio (struttura in 3 pilastri:
+ingestion / orchestrazione agentica / guardrail, più due follow-up su
+governance dei metadati vettoriali e chunking di documenti legali) e questo
+codice, file per file. La maggior parte dei suggerimenti risultava già
+implementata (RBAC sui vettori, pre-filtering server-side, grounding
+rigoroso, cache, memoria multi-turno) — quello che segue è la parte
+genuinamente nuova, aggiunta in questa sessione.
+
+**Bug reale trovato e corretto, non dal confronto ma installando per
+davvero la dipendenza pinnata**: `qdrant_store.py` chiamava
+`AsyncQdrantClient.search()`, rimosso da qdrant-client in una versione
+compresa nel pin `>=1.10` di questo progetto (`pip install qdrant-client`
+risolve oggi alla 1.19.0, dove `.search()` non esiste più). Nessun test di
+questo repo importava mai il pacchetto reale (tutti mockano
+`QdrantVectorStore`), quindi solo installare davvero la dipendenza e
+ispezionarla ha fatto emergere il problema. Migrato a `.query_points()`.
+
+**Isolamento pubblico/interno — verificato, non solo dichiarato**: il
+pre-filtering server-side su `audience` (mai un `if` post-retrieval) era
+già corretto architetturalmente; qui è stato per la prima volta verificato
+con un test reale contro il backend `:memory:` di qdrant-client stesso
+(non un mock) — vedi `tests/unit/test_qdrant_vector_store.py`. Una singola
+collection con metadati (non collection separate per pubblico/interno) è
+la scelta giusta per questo caso d'uso: non ci sono dati HR o di dominio
+completamente estraneo da isolare fisicamente, solo FAQ pubbliche vs
+documenti interni sullo stesso dominio prodotto.
+
+**Scadenza tassi/offerte (`DocumentMetadata.valid_until`)**: un chunk con
+scadenza passata è escluso server-side dalla query, sia su Qdrant
+(`QdrantVectorStore`) sia su OpenSearch (`OpenSearchKeywordIndex` — la
+fusione ibrida RRF significa che un'esclusione solo lato vettoriale non
+basta, un match lessicale sull'altro indice potrebbe comunque far passare
+un tasso scaduto). Design note: niente `is_null`/`exists` per "nessuna
+scadenza impostata" — trovato per davvero, testando contro il backend
+`:memory:`, che `FieldCondition(is_null=True)` in qdrant-client non
+matchava nemmeno i punti con quel campo genuinamente assente dal payload.
+Invece di un filtro dimostrato inaffidabile, ogni chunk porta sempre un
+`valid_until_ts` concreto (un sentinel "anno 9999" quando non scade mai),
+così la query è sempre una singola condizione di range, su entrambi gli
+indici.
+
+**Soglia di similarità sul retrieval** (`retrieval_score_threshold`,
+default disattivata): un candidato sotto soglia non arriva nemmeno al
+reranker — il reranker sceglie il meno peggio tra i candidati che riceve,
+non riconosce "nessuno di questi è davvero pertinente".
+
+**Context prepending nei chunk**: ogni chunk viene prefissato con
+`[Documento: {titolo} | {sezione}]` prima di essere vettorializzato — un
+fatto isolato ("la commissione è dell'1%") perde il soggetto una volta
+estratto dal documento sorgente; l'embedding stesso ora porta l'identità
+documento/sezione, non solo la frase.
+
+**Tabelle PDF → Markdown reale, non prosa appiattita**: `pdf_segmenter.py`
+ora rileva le tabelle (`pdfplumber.find_tables()`, righe/bordi reali, non
+euristica) e le emette come chunk Markdown a sé stanti — un LLM legge una
+tabella Markdown correttamente, mentre l'euristica a paragrafi esistente
+appiattiva righe/colonne in prosa illeggibile ("Durata Tasso Fisso Tasso
+Variabile 20 anni 3.25% 2.90%..."), perdendo l'allineamento tra durata e
+tasso — esattamente il tipo di documento più comune in banca. Le righe di
+testo dentro il riquadro di una tabella rilevata sono escluse dal
+raggruppamento a paragrafi, per non duplicare/corrompere il contenuto.
+Limite dichiarato: serve una griglia visibile nel PDF (bordi disegnati);
+una tabella allineata solo con spazi non viene rilevata e passa come prima
+per il percorso a paragrafi. Verificato con un PDF reale generato da
+fpdf2 con bordi (non un fixture sintetico dei soli byte).
+
+**Maker-Checker sui numeri (`NumericGroundingGuardrail`)**: il flag
+`grounded` esistente prova solo che un tool ha fornito *qualche* base alla
+risposta, non che il numero specifico scritto dal modello coincida con
+quello nella fonte — un modello può leggere male "3,5%" come "3,05%"
+credendo comunque di star citando fedelmente. Un secondo passaggio LLM,
+a scopo ristretto (confronta cifre, non scrive prosa), verifica che ogni
+numero nella risposta compaia identico nelle citazioni prima che la
+risposta sia trattata come affidabile a valle. Fail-*chiuso*, stessa
+logica di `SentimentEscalationGuardrail`. Costo dichiarato esplicitamente:
+scatta solo se il testo contiene qualcosa di numerico (percentuali,
+importi, TAN/TAEG) — la maggior parte dei turni non paga la chiamata
+extra.
+
+Limite onesto, non nascosto: se un tool ha già "groundato" un'iterazione
+precedente dello stesso turno, `RouterAgent` rivela il testo dal vivo
+token per token (`can_reveal_live`, comportamento deliberato e già
+testato in `test_streaming_reveals_content_live_once_search_has_grounded_the_turn`).
+Bloccare anche quella rivelazione live avrebbe richiesto bufferizzare
+l'intera risposta finale prima di mostrare un solo carattere, in
+contraddizione con quel test. Non toccato. Quello che questo guardrail
+garantisce comunque: un numero non verificato non è mai il testo che
+resta a schermo (il client sovrascrive sempre col testo dell'evento
+`done` finale — vedi `chat-ui.js`), non viene mai messo in cache per
+altri clienti anonimi, e non viene mai registrato nell'audit trail come
+se fosse affidabile.
+
+Verificato con: 94 unit test (78 preesistenti + 16 nuovi, tutti passano),
+inclusi 5 test reali contro il backend `:memory:` di qdrant-client (non
+mock) e un test PDF con tabella reale generata da fpdf2. `ruff check` pulito.
+`mypy` non eseguibile in modo pulito in questo ambiente (fallisce su
+`py.typed` mancante su tutto il progetto, preesistente, non causato da
+queste modifiche) — non risolto in questa sessione, dichiarato invece di
+ignorato in silenzio.
+
 ## Streaming, localizzatore filiali, voce — le 3 migliorie "vere" senza compromessi
 
 Delle migliorie identificate nel confronto con i chatbot bancari reali, queste tre sono state implementate senza alcun mock: funzionano davvero, non solo architetturalmente.
