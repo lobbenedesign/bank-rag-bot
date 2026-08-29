@@ -66,10 +66,17 @@ uvicorn bank_rag.interface.api.main:app --reload   # = make run
 ```
 
 Qdrant, OpenSearch, Redis, and Postgres are fully containerized — no manual
-installation on the host, just Docker. OpenAI is the one exception, since
-it's a paid external API, not self-hostable software — for a fully
-local/free setup, replace `OpenAiChatClient`/`OpenAiEmbedder` with an Ollama
-adapter behind the same `LLMClient`/`Embedder` ports.
+installation on the host, just Docker. OpenAI is the default, since it's the
+adapter that ships with the project — but it's not required: set
+`OPENAI_BASE_URL` in `.env` to point the *same* `OpenAiChatClient`/
+`OpenAiEmbedder` adapters at any self-hosted OpenAI-compatible endpoint
+instead, e.g. [LocalAI](https://github.com/mudler/LocalAI)
+(`OPENAI_BASE_URL=http://localhost:8080/v1`) — for a bank, this means chat
+and embedding traffic never leaves the network. No new adapter code is
+needed: `LLMClient`/`Embedder` were kept provider-agnostic on purpose (see
+`application/ports/llm_client.py`), so this is a config change, not a code
+change. LocalAI doesn't validate `OPENAI_API_KEY` by default, so any
+non-empty placeholder value works for it.
 
 ### Tests
 
@@ -314,10 +321,17 @@ uvicorn bank_rag.interface.api.main:app --reload   # = make run
 ```
 
 Qdrant, OpenSearch, Redis e Postgres sono interamente containerizzati: nessuna
-installazione manuale sul sistema, solo Docker. OpenAI resta l'unica eccezione
-perché è un'API esterna a pagamento, non software auto-ospitabile — per un
-setup completamente locale/gratuito, sostituire `OpenAiChatClient`/`OpenAiEmbedder`
-con un adapter Ollama dietro le stesse porte `LLMClient`/`Embedder`.
+installazione manuale sul sistema, solo Docker. OpenAI è il default, perché è
+l'adapter incluso nel progetto — ma non è obbligatorio: impostando
+`OPENAI_BASE_URL` in `.env` gli stessi adapter `OpenAiChatClient`/
+`OpenAiEmbedder` puntano a qualunque endpoint OpenAI-compatibile
+self-hosted, ad esempio [LocalAI](https://github.com/mudler/LocalAI)
+(`OPENAI_BASE_URL=http://localhost:8080/v1`) — per una banca significa che
+il traffico di chat ed embedding non esce mai dalla rete. Non serve scrivere
+nessun nuovo adapter: `LLMClient`/`Embedder` sono stati tenuti
+provider-agnostic apposta (vedi `application/ports/llm_client.py`), quindi è
+una modifica di configurazione, non di codice. LocalAI non valida
+`OPENAI_API_KEY` di default, quindi basta un valore segnaposto non vuoto.
 
 ### Test
 

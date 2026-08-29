@@ -66,7 +66,7 @@ def _new_sql_session() -> AsyncSession:
 def build_answer_question_use_case(customer_id: str | None = None, is_authenticated: bool = False) -> AnswerQuestion:
     settings = get_settings()
 
-    openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+    openai_client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url or None)
     embedder = OpenAiEmbedder(openai_client, model=settings.embedding_model)
     llm_client = OpenAiChatClient(openai_client, model=settings.chat_model)
 
@@ -108,7 +108,7 @@ def build_answer_question_use_case(customer_id: str | None = None, is_authentica
 def build_ingest_document_use_case() -> IngestDocument:
     settings = get_settings()
 
-    openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+    openai_client = AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url or None)
     embedder = OpenAiEmbedder(openai_client, model=settings.embedding_model)
     vector_store = QdrantVectorStore(AsyncQdrantClient(url=settings.qdrant_url), settings.qdrant_collection)
     keyword_index = OpenSearchKeywordIndex(AsyncOpenSearch(settings.opensearch_url), settings.opensearch_index)

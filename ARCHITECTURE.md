@@ -1,3 +1,46 @@
+## Endpoint LLM configurabile per deployment air-gapped (2026-08-29)
+
+Aggiunto `Settings.openai_base_url` (`config/settings.py`), passato come
+`base_url` alle due istanze `AsyncOpenAI` costruite in `di_container.py`
+(`build_answer_question_use_case`, `build_ingest_document_use_case`). Con
+`OPENAI_BASE_URL` non impostato il comportamento è identico a prima
+(endpoint cloud OpenAI). Impostato a un endpoint OpenAI-compatibile
+self-hosted come [LocalAI](https://github.com/mudler/LocalAI), lo stesso
+`OpenAiChatClient`/`OpenAiEmbedder` — nessuna riga toccata in
+`infrastructure/llm/openai_client.py` o `infrastructure/embeddings/openai_embedder.py`
+— serve sia chat sia embedding puntando a un modello interamente dentro il
+perimetro di rete della banca: il caso d'uso per cui `LLMClient` era già
+dichiarato "provider-agnostic on purpose" nel proprio docstring
+(`application/ports/llm_client.py:39-40`), qui reso reale.
+
+Un dettaglio non ovvio corretto durante l'implementazione: pydantic-settings
+non converte automaticamente una variabile d'ambiente vuota
+(`OPENAI_BASE_URL=` in un `.env` copiato da `.env.example` senza
+valorizzarla) in `None` per un campo `str | None` — verrebbe passata a
+`AsyncOpenAI(base_url="")` così com'è, un URL vuoto non valido. Risolto con
+`settings.openai_base_url or None` nei due punti di costruzione invece di
+un default a livello di modello, per restare esplicito su cosa succede con
+un valore vuoto.
+
+**Verificato davvero, non solo ragionato**: con un venv minimale (solo
+`pydantic-settings`+`openai`, ~1MB — la macchina di sviluppo aveva di nuovo
+poco spazio libero, 1.1GB, insufficiente per l'ambiente completo con
+`sentence-transformers`/torch usato dal reranker, quindi la suite `pytest`
+completa **non** è stata eseguita in questa sessione, a differenza di quanto
+dichiarato in una prima stesura di questa nota, corretta qui) è stato
+istanziato `Settings` due volte: con `OPENAI_BASE_URL=""` (il caso reale di
+chi copia `.env.example` senza valorizzarlo) e con
+`OPENAI_BASE_URL=http://localhost:8080/v1`. Nel primo caso
+`settings.openai_base_url or None` produce `None` e `AsyncOpenAI(...).base_url`
+resta `https://api.openai.com/v1/` (comportamento invariato); nel secondo
+`AsyncOpenAI(...).base_url` diventa realmente `http://localhost:8080/v1/`.
+Nessun test di questo repo istanzia `Settings`/`AsyncOpenAI` direttamente
+(verificato con grep), quindi il rischio di regressione sulla suite esistente
+resta basso, ma non è stato confermato eseguendola. **Non verificato**: una
+risposta reale generata da un'istanza LocalAI in esecuzione — nessuna
+istanza disponibile in questo ambiente, dichiarato esplicitamente e non
+nascosto, esattamente come per OpenAI stesso altrove in questo file.
+
 ## Data governance sul vector DB, chunking bancario, Maker-Checker sui numeri (2026-08-28)
 
 Confronto puntuale tra una risposta da colloquio (struttura in 3 pilastri:

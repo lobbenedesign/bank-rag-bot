@@ -7,6 +7,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     openai_api_key: str
+    # Overrides the OpenAI SDK's default endpoint. Left unset, chat/embedding
+    # traffic goes to OpenAI's cloud as before. Point it at a self-hosted
+    # OpenAI-compatible endpoint (e.g. LocalAI, http://localhost:8080/v1) to
+    # keep every prompt/document/response inside the bank's own network —
+    # LLMClient and Embedder were kept provider-agnostic on purpose for
+    # exactly this (see application/ports/llm_client.py), so no orchestration
+    # code changes when this is set. LocalAI doesn't validate openai_api_key
+    # by default, so any non-empty placeholder value works for it.
+    openai_base_url: str | None = None
     chat_model: str = "gpt-4.1-mini"
     embedding_model: str = "text-embedding-3-small"
 
